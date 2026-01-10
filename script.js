@@ -26,16 +26,17 @@ class NavigationModel {
         this.defaultSettings = {
             wallpaper: '',
             navigationItems: [
-                { id: 1, name: 'Google', url: 'https://google.com', icon: '🔍' },
-                { id: 2, name: 'GitHub', url: 'https://github.com', icon: '💻' },
-                { id: 3, name: 'YouTube', url: 'https://youtube.com', icon: '▶️' },
-                { id: 4, name: 'Gmail', url: 'https://mail.google.com', icon: '📧' },
-                { id: 5, name: '百度', url: 'https://baidu.com', icon: '🌐' },
-                { id: 6, name: '知乎', url: 'https://zhihu.com', icon: '📚' },
-                { id: 7, name: 'CSDN', url: 'https://csdn.net', icon: '👨‍💻' },
-                { id: 8, name: 'B站', url: 'https://bilibili.com', icon: '🎬' },
-                { id: 9, name: '淘宝', url: 'https://taobao.com', icon: '🛒' },
-                { id: 10, name: '微信', url: 'https://wx.qq.com', icon: '💬' }
+                { id: 1, name: 'Google', url: 'https://google.com', icon: '🔍', type: 'item' },
+                { id: 2, name: 'GitHub', url: 'https://github.com', icon: '💻', type: 'item' },
+                { id: 3, name: 'YouTube', url: 'https://youtube.com', icon: '▶️', type: 'item' },
+                { id: 4, name: 'Gmail', url: 'https://mail.google.com', icon: '📧', type: 'item' },
+                { id: 5, name: '百度', url: 'https://baidu.com', icon: '🌐', type: 'item' },
+                { id: 6, name: '知乎', url: 'https://zhihu.com', icon: '📚', type: 'item' },
+                { id: 7, name: 'CSDN', url: 'https://csdn.net', icon: '👨‍💻', type: 'item' },
+                { id: 8, name: 'B站', url: 'https://bilibili.com', icon: '🎬', type: 'item' },
+                { id: 9, name: '淘宝', url: 'https://taobao.com', icon: '🛒', type: 'item' },
+                { id: 10, name: '微信', url: 'https://wx.qq.com', icon: '💬', type: 'item' },
+                { id: 11, name: '搜索工具', icon: '🔎', type: 'group', children: [1, 5] }
             ],
             layout: {
                 columns: 5,
@@ -69,25 +70,80 @@ class NavigationModel {
 
     addNavigationItem(item) {
         const newId = Math.max(...this.currentSettings.navigationItems.map(i => i.id), 0) + 1;
-        const newItem = { id: newId, ...item };
+        const newItem = { 
+            id: newId, 
+            type: item.type || 'item',
+            ...item,
+            ...(item.type === 'group' ? { children: item.children || [] } : {}) 
+        };
         this.currentSettings.navigationItems.push(newItem);
         this.saveSettings();
         return newItem;
     }
 
-    updateNavigationItem(id, updates) {
-        const index = this.currentSettings.navigationItems.findIndex(item => item.id === id);
-        if (index !== -1) {
-            this.currentSettings.navigationItems[index] = { ...this.currentSettings.navigationItems[index], ...updates };
+    addToolGroup(name, icon = '📦', initialItems = []) {
+        return this.addNavigationItem({
+            name,
+            icon,
+            type: 'group',
+            children: initialItems
+        });
+    }
+
+    addItemToGroup(groupId, itemId) {
+        const group = this.currentSettings.navigationItems.find(item => item.id === groupId && item.type === 'group');
+        if (group && !group.children.includes(itemId)) {
+            group.children.push(itemId);
             this.saveSettings();
             return true;
         }
-        return;
- false    }
+        return false;
+    }
+
+    removeItemFromGroup(groupId, itemId) {
+        const group = this.currentSettings.navigationItems.find(item => item.id === groupId && item.type === 'group');
+        if (group) {
+            const index = group.children.indexOf(itemId);
+            if (index !== -1) {
+                group.children.splice(index, 1);
+                this.saveSettings();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    updateNavigationItem(id, updates) {
+        const index = this.currentSettings.navigationItems.findIndex(item => item.id === id);
+        if (index !== -1) {
+            const item = this.currentSettings.navigationItems[index];
+            const updatedItem = { ...item, ...updates };
+            
+            // 确保工具组始终有children数组
+            if (updatedItem.type === 'group' && !updatedItem.children) {
+                updatedItem.children = [];
+            }
+            
+            this.currentSettings.navigationItems[index] = updatedItem;
+            this.saveSettings();
+            return true;
+        }
+        return false;
+    }
 
     deleteNavigationItem(id) {
         const index = this.currentSettings.navigationItems.findIndex(item => item.id === id);
         if (index !== -1) {
+            // 从所有工具组中移除该项目
+            this.currentSettings.navigationItems.forEach(item => {
+                if (item.type === 'group' && item.children) {
+                    const childIndex = item.children.indexOf(id);
+                    if (childIndex !== -1) {
+                        item.children.splice(childIndex, 1);
+                    }
+                }
+            });
+            
             this.currentSettings.navigationItems.splice(index, 1);
             this.saveSettings();
             return true;
@@ -282,29 +338,149 @@ class NavigationApp {
         this.navGrid.style.gap = `${layout.spacing}px`;
 
         items.forEach(item => {
-            const navItem = document.createElement('a');
-            navItem.href = item.url;
-            navItem.target = '_blank';
-            navItem.className = 'nav-item';
-            navItem.dataset.id = item.id;
-            navItem.style.setProperty('--icon-size', `${layout.iconSize}px`);
+            if (item.type === 'group') {
+                this.renderGroupItem(item, layout);
+            } else {
+                this.renderRegularItem(item, layout);
+            }
+        });
+    }
 
-            navItem.innerHTML = `
-                <div class="nav-item-icon" style="width: ${layout.iconSize}px; height: ${layout.iconSize}px; font-size: ${layout.iconSize * 0.6}px">
-                    ${item.icon || '🔗'}
+    // 渲染普通导航项
+    renderRegularItem(item, layout) {
+        const navItem = document.createElement('a');
+        navItem.href = item.url;
+        navItem.target = '_blank';
+        navItem.className = 'nav-item';
+        navItem.dataset.id = item.id;
+        navItem.style.setProperty('--icon-size', `${layout.iconSize}px`);
+
+        navItem.innerHTML = `
+            <div class="nav-item-icon" style="width: ${layout.iconSize}px; height: ${layout.iconSize}px; font-size: ${layout.iconSize * 0.6}px">
+                ${item.icon || '🔗'}
+            </div>
+            <div class="nav-item-name">${item.name}</div>
+        `;
+
+        // 右键菜单
+        navItem.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            this.currentEditItemId = item.id;
+            this.showContextMenu(e, this.iconContextMenu);
+        });
+
+        this.navGrid.appendChild(navItem);
+    }
+
+    // 渲染工具组项
+    renderGroupItem(item, layout) {
+        const groupContainer = document.createElement('div');
+        groupContainer.className = 'nav-group-container';
+        groupContainer.dataset.id = item.id;
+
+        // 工具组标题项
+        const groupItem = document.createElement('div');
+        groupItem.className = 'nav-item nav-group-item';
+        groupItem.dataset.id = item.id;
+        groupItem.style.setProperty('--icon-size', `${layout.iconSize}px`);
+
+        // 获取工具组的子项图标
+        const childrenItems = this.model.getNavigationItems().filter(child => 
+            item.children && item.children.includes(child.id)
+        );
+
+        let groupContent = `
+            <div class="nav-item-icon" style="width: ${layout.iconSize}px; height: ${layout.iconSize}px; font-size: ${layout.iconSize * 0.6}px">
+                ${item.icon || '📦'}
+            </div>
+            <div class="nav-item-name">${item.name}</div>
+        `;
+
+        // 如果有子项，添加子项图标缩略图
+        if (childrenItems.length > 0) {
+            groupContent += '<div class="nav-group-thumbnails">';
+            childrenItems.slice(0, 4).forEach(child => {
+                groupContent += `<span class="nav-group-thumbnail" title="${child.name}">${child.icon || '🔗'}</span>`;
+            });
+            if (childrenItems.length > 4) {
+                groupContent += `<span class="nav-group-more">+${childrenItems.length - 4}</span>`;
+            }
+            groupContent += '</div>';
+        }
+
+        groupItem.innerHTML = groupContent;
+
+        // 工具组点击事件 - 切换展开/折叠
+        groupItem.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleGroupExpand(item.id, groupContainer, layout);
+        });
+
+        // 工具组右键菜单
+        groupItem.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            this.currentEditItemId = item.id;
+            this.showContextMenu(e, this.iconContextMenu);
+        });
+
+        groupContainer.appendChild(groupItem);
+        this.navGrid.appendChild(groupContainer);
+    }
+
+    // 切换工具组展开/折叠状态
+    toggleGroupExpand(groupId, groupContainer, layout) {
+        const expandedSection = groupContainer.querySelector('.nav-group-expanded');
+        
+        if (expandedSection) {
+            // 折叠状态
+            expandedSection.remove();
+        } else {
+            // 展开状态
+            this.renderGroupExpanded(groupId, groupContainer, layout);
+        }
+    }
+
+    // 渲染展开的工具组
+    renderGroupExpanded(groupId, groupContainer, layout) {
+        const groupItem = this.model.getNavigationItems().find(item => item.id === groupId);
+        if (!groupItem || !groupItem.children) return;
+
+        const expandedSection = document.createElement('div');
+        expandedSection.className = 'nav-group-expanded';
+        expandedSection.dataset.groupId = groupId;
+
+        // 获取所有子项
+        const childrenItems = this.model.getNavigationItems().filter(child => 
+            groupItem.children.includes(child.id)
+        );
+
+        childrenItems.forEach(child => {
+            const childElement = document.createElement('a');
+            childElement.href = child.url;
+            childElement.target = '_blank';
+            childElement.className = 'nav-item nav-group-child';
+            childElement.dataset.id = child.id;
+            childElement.dataset.parentId = groupId;
+            childElement.style.setProperty('--icon-size', `${layout.iconSize * 0.8}px`);
+
+            childElement.innerHTML = `
+                <div class="nav-item-icon" style="width: ${layout.iconSize * 0.8}px; height: ${layout.iconSize * 0.8}px; font-size: ${layout.iconSize * 0.48}px">
+                    ${child.icon || '🔗'}
                 </div>
-                <div class="nav-item-name">${item.name}</div>
+                <div class="nav-item-name">${child.name}</div>
             `;
 
-            // 右键菜单
-            navItem.addEventListener('contextmenu', (e) => {
+            // 子项右键菜单
+            childElement.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                this.currentEditItemId = item.id;
+                this.currentEditItemId = child.id;
                 this.showContextMenu(e, this.iconContextMenu);
             });
 
-            this.navGrid.appendChild(navItem);
+            expandedSection.appendChild(childElement);
         });
+
+        groupContainer.appendChild(expandedSection);
     }
 
     // 壁纸相关
@@ -377,18 +553,47 @@ class NavigationApp {
         items.forEach(item => {
             const listItem = document.createElement('div');
             listItem.className = 'nav-list-item';
-            listItem.innerHTML = `
-                <div>
-                    <strong>${item.name}</strong>
-                    <div style="font-size: 0.8em; color: #718096">${item.url}</div>
-                </div>
-                <div>
-                    <button class="btn secondary edit-item" data-id="${item.id}">编辑</button>
-                    <button class="btn danger delete-item" data-id="${item.id}">删除</button>
-                </div>
-            `;
+            
+            let itemContent;
+            if (item.type === 'group') {
+                // 工具组项
+                const childCount = item.children ? item.children.length : 0;
+                itemContent = `
+                    <div>
+                        <strong>${item.name}</strong>
+                        <div style="font-size: 0.8em; color: #718096">
+                            <span style="background: #4f46e5; color: white; padding: 2px 6px; border-radius: 10px; font-size: 0.7em; margin-right: 8px;">工具组</span>
+                            包含 ${childCount} 个项
+                        </div>
+                    </div>
+                    <div>
+                        <button class="btn secondary edit-item" data-id="${item.id}">编辑</button>
+                        <button class="btn danger delete-item" data-id="${item.id}">删除</button>
+                    </div>
+                `;
+            } else {
+                // 普通项
+                itemContent = `
+                    <div>
+                        <strong>${item.name}</strong>
+                        <div style="font-size: 0.8em; color: #718096">${item.url}</div>
+                    </div>
+                    <div>
+                        <button class="btn secondary edit-item" data-id="${item.id}">编辑</button>
+                        <button class="btn danger delete-item" data-id="${item.id}">删除</button>
+                    </div>
+                `;
+            }
+            
+            listItem.innerHTML = itemContent;
 
-            listItem.querySelector('.edit-item').addEventListener('click', () => this.openEditModal(item.id));
+            listItem.querySelector('.edit-item').addEventListener('click', () => {
+                if (item.type === 'group') {
+                    this.openEditGroupModal(item.id);
+                } else {
+                    this.openEditModal(item.id);
+                }
+            });
 
             listItem.querySelector('.delete-item').addEventListener('click', () => {
                 if (confirm(`确定要删除 "${item.name}" 吗？`)) {
@@ -408,6 +613,11 @@ class NavigationApp {
         event.preventDefault();
         this.hideAllMenus();
 
+        // 如果是图标右键菜单，根据项类型显示不同菜单项
+        if (menuElement.id === 'icon-context-menu') {
+            this.adaptContextMenuForItemType();
+        }
+
         menuElement.style.display = 'block';
         menuElement.style.left = `${event.pageX}px`;
         menuElement.style.top = `${event.pageY}px`;
@@ -419,6 +629,68 @@ class NavigationApp {
         });
 
         this.currentContextMenu = menuElement;
+    }
+
+    // 根据项类型调整右键菜单
+    adaptContextMenuForItemType() {
+        const item = this.model.getNavigationItems().find(i => i.id === this.currentEditItemId);
+        if (!item) return;
+
+        const menu = this.iconContextMenu;
+        const menuItems = menu.querySelectorAll('li');
+        
+        // 先隐藏所有菜单项
+        menuItems.forEach(item => item.style.display = 'none');
+        
+        if (item.type === 'item') {
+            // 普通项菜单
+            menu.querySelector('[data-action="edit"]').style.display = 'block';
+            menu.querySelector('[data-action="delete"]').style.display = 'block';
+            menu.querySelector('[data-action="move-up"]').style.display = 'block';
+            menu.querySelector('[data-action="move-down"]').style.display = 'block';
+            
+            // 添加"添加到工具组"选项
+            let addToGroupItem = menu.querySelector('[data-action="add-to-group"]');
+            if (!addToGroupItem) {
+                addToGroupItem = document.createElement('li');
+                addToGroupItem.dataset.action = 'add-to-group';
+                addToGroupItem.textContent = '添加到工具组';
+                menu.querySelector('ul').appendChild(addToGroupItem);
+            }
+            addToGroupItem.style.display = 'block';
+        } else if (item.type === 'group') {
+            // 工具组菜单
+            
+            // 添加"编辑工具组"选项
+            let editGroupItem = menu.querySelector('[data-action="edit-group"]');
+            if (!editGroupItem) {
+                editGroupItem = document.createElement('li');
+                editGroupItem.dataset.action = 'edit-group';
+                editGroupItem.textContent = '编辑工具组';
+                menu.querySelector('ul').appendChild(editGroupItem);
+            }
+            editGroupItem.style.display = 'block';
+            
+            // 添加"添加项到工具组"选项
+            let addItemToGroupItem = menu.querySelector('[data-action="add-item-to-group"]');
+            if (!addItemToGroupItem) {
+                addItemToGroupItem = document.createElement('li');
+                addItemToGroupItem.dataset.action = 'add-item-to-group';
+                addItemToGroupItem.textContent = '添加项';
+                menu.querySelector('ul').appendChild(addItemToGroupItem);
+            }
+            addItemToGroupItem.style.display = 'block';
+            
+            // 添加"删除工具组"选项
+            let deleteGroupItem = menu.querySelector('[data-action="delete-group"]');
+            if (!deleteGroupItem) {
+                deleteGroupItem = document.createElement('li');
+                deleteGroupItem.dataset.action = 'delete-group';
+                deleteGroupItem.textContent = '删除工具组';
+                menu.querySelector('ul').appendChild(deleteGroupItem);
+            }
+            deleteGroupItem.style.display = 'block';
+        }
     }
 
     hideAllMenus() {
@@ -460,7 +732,31 @@ class NavigationApp {
                     this.renderNavigationGrid();
                     this.renderNavList();
                 }
-;
+                break;
+            case 'add-to-group':
+                if (this.currentEditItemId) {
+                    this.showAddToGroupDialog();
+                }
+                break;
+            case 'edit-group':
+                if (this.currentEditItemId) {
+                    this.openEditGroupModal(this.currentEditItemId);
+                }
+                break;
+            case 'add-item-to-group':
+                if (this.currentEditItemId) {
+                    this.showAddItemToGroupDialog(this.currentEditItemId);
+                }
+                break;
+            case 'delete-group':
+                if (this.currentEditItemId) {
+                    if (confirm('确定要删除这个工具组吗？')) {
+                        this.model.deleteNavigationItem(this.currentEditItemId);
+                        this.renderNavigationGrid();
+                        this.renderNavList();
+                        this.showToast('已删除工具组');
+                    }
+                }
                 break;
             case 'set-wallpaper':
                 this.wallpaperUpload.click();
@@ -472,6 +768,76 @@ class NavigationApp {
             case 'open-settings':
                 this.openSettingsPanel();
                 break;
+        }
+    }
+
+    // 显示"添加到工具组"对话框
+    showAddToGroupDialog() {
+        const groups = this.model.getNavigationItems().filter(item => item.type === 'group');
+        if (groups.length === 0) {
+            this.showToast('没有可用的工具组，请先创建工具组', 'error');
+            return;
+        }
+
+        const groupNames = groups.map(group => group.name).join('\n');
+        const selectedGroupName = prompt(`请输入要添加到的工具组名称：\n\n可用工具组：\n${groupNames}`);
+        
+        if (selectedGroupName) {
+            const selectedGroup = groups.find(group => group.name === selectedGroupName);
+            if (selectedGroup) {
+                const success = this.model.addItemToGroup(selectedGroup.id, this.currentEditItemId);
+                if (success) {
+                    this.renderNavigationGrid();
+                    this.renderNavList();
+                    this.showToast(`已添加到工具组"${selectedGroupName}"`);
+                } else {
+                    this.showToast('添加失败，该项目可能已在工具组中', 'error');
+                }
+            } else {
+                this.showToast('未找到指定的工具组', 'error');
+            }
+        }
+    }
+
+    // 显示"添加项到工具组"对话框
+    showAddItemToGroupDialog(groupId) {
+        const items = this.model.getNavigationItems().filter(item => item.type === 'item');
+        if (items.length === 0) {
+            this.showToast('没有可用的导航项', 'error');
+            return;
+        }
+
+        const itemNames = items.map(item => item.name).join('\n');
+        const selectedItemName = prompt(`请输入要添加到工具组的项名称：\n\n可用项：\n${itemNames}`);
+        
+        if (selectedItemName) {
+            const selectedItem = items.find(item => item.name === selectedItemName);
+            if (selectedItem) {
+                const success = this.model.addItemToGroup(groupId, selectedItem.id);
+                if (success) {
+                    this.renderNavigationGrid();
+                    this.renderNavList();
+                    this.showToast(`已添加"${selectedItemName}"到工具组`);
+                } else {
+                    this.showToast('添加失败，该项目可能已在工具组中', 'error');
+                }
+            } else {
+                this.showToast('未找到指定的项', 'error');
+            }
+        }
+    }
+
+    // 打开编辑工具组模态框
+    openEditGroupModal(groupId) {
+        const group = this.model.getNavigationItems().find(item => item.id === groupId);
+        if (!group) return;
+
+        const newName = prompt('请输入工具组新名称：', group.name);
+        if (newName && newName.trim() !== group.name) {
+            this.model.updateNavigationItem(groupId, { name: newName.trim() });
+            this.renderNavigationGrid();
+            this.renderNavList();
+            this.showToast('工具组已更新');
         }
     }
 
