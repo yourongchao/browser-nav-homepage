@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>浏览器导航主页</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏠</text></svg>">
+</head>
+<body>
+    <!-- 壁纸背景 -->
+    <div id="wallpaper" class="wallpaper"></div>
+
+    <!--主 内容区域 -->
+    <main class="container">
+        <header class="header">
+            <h1 class="title">导航主页</h1>
+            <button id="settings-toggle" class="settings-toggle">设置</button>
+        </header>
+
+        <!-- 导航网格 -->
+        <div id="nav-grid" class="nav-grid">
+            <!-- 导航项通过JavaScript动态生成 -->
+        </div>
+
+        <!-- 添加导航项按钮（仅在设置模式下显示） -->
+        <button id="add-nav-btn" class="add-nav-btn">+ 添加快捷方式</button>
+    </main>
+
+    <!-- 图标右键菜单 -->
+    <div id="icon-context-menu" class="context-menu">
+        <ul>
+            <li data-action="edit">编辑网址</li>
+            <li data-action="delete">删除</li>
+            <li data-action="move-up">上移</li>
+            <li data-action="move-down">下移</li>
+        </ul>
+    </div>
+
+    <!-- 壁纸右键菜单 -->
+    <div id="wallpaper-context-menu" class="context-menu">
+        <ul>
+            <li data-action="set-wallpaper">设置壁纸</li>
+            <li data-action="add-custom-url">添加自定义网址</li>
+            <li data-action="nav-settings">导航设置</li>
+            <li data-action="open-settings">打开设置面板</li>
+        </ul>
+    </div>
+
+    <!-- 设置面板 -->
+    <div id="settings-panel" class="settings-panel">
+        <div class="settings-header">
+            <h2>设置</h2>
+            <button id="close-settings" class="close-btn">×</button>
+        </div>
+        <div class="settings-content">
+            <!-- 壁纸设置 -->
+            <section class="settings-section">
+                <h3>壁纸设置</h3>
+                <div class="form-group">
+                    <label for="wallpaper-upload">上传壁纸：</label>
+                    <input type="file" id="wallpaper-upload" accept="image/*" class="file-input">
+                    <div class="preview-container">
+                        <div id="wallpaper-preview" class="wallpaper-preview"></div>
+                    </div>
+                    <button id="reset-wallpaper" class="btn secondary">恢复默认壁纸</button>
+                </div>
+            </section>
+
+            <!-- 导航管理 -->
+            <section class="settings-section">
+                <h3>导航管理</h3>
+                <div id="nav-list" class="nav-list">
+                    <!-- 导航项列表通过JavaScript动态生成 -->
+                </div>
+                <button id="add-nav-item" class="btn primary">添加新导航项</button>
+            </section>
+
+            <!-- 布局调整 -->
+            <section class="settings-section">
+                <h3>布局调整</h3>
+                <div class="form-group">
+                    <label for="columns">列数：<span id="columns-value">5</span></label>
+                    <input type="range" id="columns" min="3" max="8" value="5" class="slider">
+                </div>
+                <div class="form-group">
+                    <label for="spacing">间距：<span id="spacing-value">10</span>px</label>
+                    <input type="range" id="spacing" min="5" max="30" value="10" class="slider">
+                </div>
+                <div class="form-group">
+                    <label for="icon-size">图标大小：<span id="icon-size-value">48</span>px</label>
+                    <input type="range" id="icon-size" min="32" max="80" value="48" class="slider">
+                </div>
+            </section>
+
+            <!-- 数据管理 -->
+            <section class="settings-section">
+                <h3>数据管理</h3>
+                <div class="form-group">
+                    <button id="export-data" class="btn secondary">导出设置</button>
+                    <button id="import-data" class="btn secondary">导入设置</button>
+                    <input type="file" id="import-file" accept=".json" style="display: none;">
+                    <button id="reset-data" class="btn danger">重置为默认设置</button>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- 编辑模态框 -->
+    <div id="edit-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>编辑导航项</h3>
+                <button class="close-modal">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-form">
+                    <div class="form-group">
+                        <label for="edit-name">名称</label>
+                        <input type="text" id="edit-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-url">网址</label>
+                        <input type="url" id="edit-url" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-icon">图标（可选）</label>
+                        <input type="file" id="edit-icon" accept="image/*">
+                        <div id="icon-preview" class="icon-preview"></div>
+                    </div>
+                    <div class="form-buttons">
+                        <button type="submit" class="btn primary">保存</button>
+                        <button type="button" class="btn secondary close-modal">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 消息提示 -->
+    <div id="toast" class="toast"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
