@@ -22,36 +22,70 @@
 // 数据模型类：负责所有数据的存储、加载和操作
 class NavigationModel {
     constructor() {
+        // 本地存储相关属性
         this.storageKey = 'browser-nav-settings';
+        
+        // 文件系统相关属性
+        this.fileHandle = null;
+        this.isFileStorageEnabled = false;
+        this.storageFileName = 'navigation-settings.json';
+        this.backupFileName = 'navigation-settings.backup.json';
+        this.checksumKey = 'nav-settings-checksum';
+        
+        // 默认设置
         this.defaultSettings = {
+            version: '1.0',
+            timestamp: Date.now(),
+            checksum: '',
             wallpaper: '',
             navigationItems: [
-                { id: 1, name: 'Google', url: 'https://google.com', icon: '🔍', type: 'item' },
-                { id: 2, name: 'GitHub', url: 'https://github.com', icon: '💻', type: 'item' },
-                { id: 3, name: 'YouTube', url: 'https://youtube.com', icon: '▶️', type: 'item' },
-                { id: 4, name: 'Gmail', url: 'https://mail.google.com', icon: '📧', type: 'item' },
-                { id: 5, name: '百度', url: 'https://baidu.com', icon: '🌐', type: 'item' },
-                { id: 6, name: '知乎', url: 'https://zhihu.com', icon: '📚', type: 'item' },
-                { id: 7, name: 'CSDN', url: 'https://csdn.net', icon: '👨‍💻', type: 'item' },
-                { id: 8, name: 'B站', url: 'https://bilibili.com', icon: '🎬', type: 'item' },
-                { id: 9, name: '淘宝', url: 'https://taobao.com', icon: '🛒', type: 'item' },
-                { id: 10, name: '微信', url: 'https://wx.qq.com', icon: '💬', type: 'item' },
-                { id: 11, name: '搜索工具', icon: '🔎', type: 'group', children: [1, 5] }
+                { id: 1, name: 'Google', url: 'https://google.com', icon: '🔍' },
+                { id: 2, name: 'GitHub', url: 'https://github.com', icon: '💻' },
+                { id: 3, name: 'YouTube', url: 'https://youtube.com', icon: '▶️' },
+                { id: 4, name: 'Gmail', url: 'https://mail.google.com', icon: '📧' },
+                { id: 5, name: '百度', url: 'https://baidu.com', icon: '🌐' },
+                { id: 6, name: '知乎', url: 'https://zhihu.com', icon: '📚' },
+                { id: 7, name: 'CSDN', url: 'https://csdn.net', icon: '👨‍💻' },
+                { id: 8, name: 'B站', url: 'https://bilibili.com', icon: '🎬' },
+                { id: 9, name: '淘宝', url: 'https://taobao.com', icon: '🛒' },
+                { id: 10, name: '微信', url: 'https://wx.qq.com', icon: '💬' }
             ],
+            toolGroups: [],
             layout: {
-                columns: 5,
+                columns: 8,
                 spacing: 10,
                 iconSize: 48
+            },
+            search: {
+                engine: 'google',
+                opacity: 0.2 // 对应80%透明度，因为1 - 0.2 = 0.8
             }
         };
+        
+        // 初始化数据
         this.currentSettings = this.loadSettings();
+        
+        // 确保必要属性存在
+        this.ensureSettingsStructure();
+        
+        // 初始化文件存储（异步）
+        this.initFileStorage().catch(err => {
+            console.log('文件存储初始化失败，使用localStorage', err);
+        });
     }
 
     loadSettings() {
         const stored = localStorage.getItem(this.storageKey);
         if (stored) {
             try {
-                return JSON.parse(stored);
+                const parsed = JSON.parse(stored);
+                // 验证加载的数据
+                if (this.validateSettings(parsed)) {
+                    return parsed;
+                } else {
+                    console.error('加载的数据无效，使用默认设置');
+                    return this.defaultSettings;
+                }
             } catch (e) {
                 console.error('加载设置失败，使用默认设置', e);
                 return this.defaultSettings;
@@ -61,7 +95,32 @@ class NavigationModel {
     }
 
     saveSettings() {
-        localStorage.setItem(this.storageKey, JSON.stringify(this.currentSettings));
+        try {
+            // 验证数据有效性
+            if (!this.validateSettings(this.currentSettings)) {
+                console.error('数据无效，保存失败');
+                return false;
+            }
+            
+            // 更新时间戳和校验和
+            this.currentSettings.timestamp = Date.now();
+            this.currentSettings.checksum = this.generateChecksum(this.currentSettings);
+            
+            // 先保存到localStorage（同步，确保数据安全）
+            localStorage.setItem(this.storageKey, JSON.stringify(this.currentSettings));
+            
+            // 再异步保存到文件（如果启用了文件存储）
+            if (this.isFileStorageEnabled) {
+                this.saveToFile().catch(err => {
+                    console.error('保存到文件失败，但已保存到localStorage:', err);
+                });
+            }
+            
+            return true;
+        } catch (err) {
+            console.error('保存设置失败:', err);
+            return false;
+        }
     }
 
     getNavigationItems() {
@@ -70,61 +129,16 @@ class NavigationModel {
 
     addNavigationItem(item) {
         const newId = Math.max(...this.currentSettings.navigationItems.map(i => i.id), 0) + 1;
-        const newItem = { 
-            id: newId, 
-            type: item.type || 'item',
-            ...item,
-            ...(item.type === 'group' ? { children: item.children || [] } : {}) 
-        };
+        const newItem = { id: newId, ...item };
         this.currentSettings.navigationItems.push(newItem);
         this.saveSettings();
         return newItem;
     }
 
-    addToolGroup(name, icon = '📦', initialItems = []) {
-        return this.addNavigationItem({
-            name,
-            icon,
-            type: 'group',
-            children: initialItems
-        });
-    }
-
-    addItemToGroup(groupId, itemId) {
-        const group = this.currentSettings.navigationItems.find(item => item.id === groupId && item.type === 'group');
-        if (group && !group.children.includes(itemId)) {
-            group.children.push(itemId);
-            this.saveSettings();
-            return true;
-        }
-        return false;
-    }
-
-    removeItemFromGroup(groupId, itemId) {
-        const group = this.currentSettings.navigationItems.find(item => item.id === groupId && item.type === 'group');
-        if (group) {
-            const index = group.children.indexOf(itemId);
-            if (index !== -1) {
-                group.children.splice(index, 1);
-                this.saveSettings();
-                return true;
-            }
-        }
-        return false;
-    }
-
     updateNavigationItem(id, updates) {
         const index = this.currentSettings.navigationItems.findIndex(item => item.id === id);
         if (index !== -1) {
-            const item = this.currentSettings.navigationItems[index];
-            const updatedItem = { ...item, ...updates };
-            
-            // 确保工具组始终有children数组
-            if (updatedItem.type === 'group' && !updatedItem.children) {
-                updatedItem.children = [];
-            }
-            
-            this.currentSettings.navigationItems[index] = updatedItem;
+            this.currentSettings.navigationItems[index] = { ...this.currentSettings.navigationItems[index], ...updates };
             this.saveSettings();
             return true;
         }
@@ -134,16 +148,6 @@ class NavigationModel {
     deleteNavigationItem(id) {
         const index = this.currentSettings.navigationItems.findIndex(item => item.id === id);
         if (index !== -1) {
-            // 从所有工具组中移除该项目
-            this.currentSettings.navigationItems.forEach(item => {
-                if (item.type === 'group' && item.children) {
-                    const childIndex = item.children.indexOf(id);
-                    if (childIndex !== -1) {
-                        item.children.splice(childIndex, 1);
-                    }
-                }
-            });
-            
             this.currentSettings.navigationItems.splice(index, 1);
             this.saveSettings();
             return true;
@@ -157,16 +161,27 @@ class NavigationModel {
 
         if (direction === 'up' && index > 0) {
             [this.currentSettings.navigationItems[index], this.currentSettings.navigationItems[index - 1]] = 
-            [this.currentSettings.navigationItems[index - 1], this.currentSettings.navigationItems[index]];
+                [this.currentSettings.navigationItems[index - 1], this.currentSettings.navigationItems[index]];
             this.saveSettings();
             return true;
         } else if (direction === 'down' && index < this.currentSettings.navigationItems.length - 1) {
             [this.currentSettings.navigationItems[index], this.currentSettings.navigationItems[index + 1]] = 
-            [this.currentSettings.navigationItems[index + 1], this.currentSettings.navigationItems[index]];
+                [this.currentSettings.navigationItems[index + 1], this.currentSettings.navigationItems[index]];
             this.saveSettings();
             return true;
         }
         return false;
+    }
+
+    reorderNavigationItems(newOrder) {
+        try {
+            this.currentSettings.navigationItems = newOrder;
+            this.saveSettings();
+            return true;
+        } catch (e) {
+            console.error('重新排序导航项失败', e);
+            return false;
+        }
     }
 
     getWallpaper() {
@@ -187,9 +202,341 @@ class NavigationModel {
         this.saveSettings();
     }
 
+    // 确保设置结构完整
+    ensureSettingsStructure() {
+        // 确保基本属性存在
+        if (!this.currentSettings.version) {
+            this.currentSettings.version = this.defaultSettings.version;
+        }
+        
+        if (!this.currentSettings.timestamp) {
+            this.currentSettings.timestamp = Date.now();
+        }
+        
+        if (!this.currentSettings.checksum) {
+            this.currentSettings.checksum = this.generateChecksum(this.currentSettings);
+        }
+        
+        if (!this.currentSettings.navigationItems) {
+            this.currentSettings.navigationItems = [];
+        }
+        
+        if (!this.currentSettings.toolGroups) {
+            this.currentSettings.toolGroups = [];
+        }
+        
+        if (!this.currentSettings.layout) {
+            this.currentSettings.layout = this.defaultSettings.layout;
+        }
+        
+        if (!this.currentSettings.search) {
+            this.currentSettings.search = this.defaultSettings.search;
+        }
+        
+        this.saveSettings();
+    }
+    
     resetToDefault() {
         this.currentSettings = this.defaultSettings;
         this.saveSettings();
+    }
+    
+    // 生成数据校验和
+    generateChecksum(data) {
+        const { checksum, ...dataWithoutChecksum } = data;
+        const dataStr = JSON.stringify(dataWithoutChecksum);
+        let hash = 0;
+        for (let i = 0; i < dataStr.length; i++) {
+            const char = dataStr.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+        return hash.toString(16);
+    }
+    
+    // 验证数据校验和
+    verifyChecksum(data) {
+        if (!data.checksum) return false;
+        const expectedChecksum = this.generateChecksum(data);
+        return data.checksum === expectedChecksum;
+    }
+    
+    // 检查浏览器是否支持文件系统访问API
+    isFileSystemAPISupported() {
+        return 'showSaveFilePicker' in window && 'showOpenFilePicker' in window;
+    }
+    
+    // 初始化文件存储
+    async initFileStorage() {
+        if (!this.isFileSystemAPISupported()) {
+            console.log('浏览器不支持File System Access API');
+            return false;
+        }
+        
+        try {
+            // 尝试打开现有文件
+            const opened = await this.openStorageFile();
+            if (opened) {
+                this.isFileStorageEnabled = true;
+                return true;
+            }
+            
+            // 如果没有现有文件，尝试创建新文件
+            const created = await this.createStorageFile();
+            if (created) {
+                this.isFileStorageEnabled = true;
+                return true;
+            }
+            
+            return false;
+        } catch (err) {
+            console.error('文件存储初始化失败:', err);
+            return false;
+        }
+    }
+    
+    // 创建新的存储文件
+    async createStorageFile() {
+        try {
+            this.fileHandle = await window.showSaveFilePicker({
+                suggestedName: this.storageFileName,
+                types: [{ accept: { 'application/json': ['.json'] } }],
+                excludeAcceptAllOption: true
+            });
+            
+            // 写入初始数据
+            await this.saveToFile();
+            return true;
+        } catch (err) {
+            console.error('创建存储文件失败:', err);
+            return false;
+        }
+    }
+    
+    // 打开现有存储文件
+    async openStorageFile() {
+        try {
+            const [handle] = await window.showOpenFilePicker({
+                types: [{ accept: { 'application/json': ['.json'] } }],
+                excludeAcceptAllOption: true,
+                multiple: false
+            });
+            
+            this.fileHandle = handle;
+            
+            // 从文件加载数据
+            const loaded = await this.loadFromFile();
+            if (loaded) {
+                return true;
+            }
+            
+            // 如果加载失败，尝试从localStorage获取数据并保存到文件
+            await this.saveToFile();
+            return true;
+        } catch (err) {
+            console.error('打开存储文件失败:', err);
+            return false;
+        }
+    }
+    
+    // 从文件加载数据
+    async loadFromFile() {
+        try {
+            if (!this.fileHandle) {
+                return false;
+            }
+            
+            const file = await this.fileHandle.getFile();
+            const fileContent = await file.text();
+            const data = JSON.parse(fileContent);
+            
+            // 验证数据完整性
+            if (this.verifyChecksum(data)) {
+                this.currentSettings = data;
+                this.ensureSettingsStructure();
+                this.saveSettings(); // 同时更新localStorage作为备份
+                return true;
+            } else {
+                console.error('数据校验失败，尝试恢复备份');
+                return await this.restoreFromBackup();
+            }
+        } catch (err) {
+            console.error('从文件加载数据失败:', err);
+            return false;
+        }
+    }
+    
+    // 将数据保存到文件
+    async saveToFile() {
+        try {
+            if (!this.fileHandle) {
+                return false;
+            }
+            
+            // 更新时间戳和校验和
+            this.currentSettings.timestamp = Date.now();
+            this.currentSettings.checksum = this.generateChecksum(this.currentSettings);
+            
+            // 创建原子更新：先写入临时文件，再替换原文件
+            const writable = await this.fileHandle.createWritable({
+                keepExistingData: false
+            });
+            
+            await writable.write(JSON.stringify(this.currentSettings, null, 2));
+            await writable.close();
+            
+            // 创建备份
+            await this.backupFile();
+            
+            return true;
+        } catch (err) {
+            console.error('保存数据到文件失败:', err);
+            return false;
+        }
+    }
+    
+    // 创建文件备份
+    async backupFile() {
+        try {
+            if (!this.fileHandle) {
+                return false;
+            }
+            
+            // 创建备份文件
+            const backupHandle = await window.showSaveFilePicker({
+                suggestedName: this.backupFileName,
+                types: [{ accept: { 'application/json': ['.json'] } }],
+                excludeAcceptAllOption: true
+            });
+            
+            const writable = await backupHandle.createWritable({
+                keepExistingData: false
+            });
+            
+            await writable.write(JSON.stringify(this.currentSettings, null, 2));
+            await writable.close();
+            
+            return true;
+        } catch (err) {
+            console.error('创建备份失败:', err);
+            return false;
+        }
+    }
+    
+    // 从备份恢复数据
+    async restoreFromBackup() {
+        try {
+            const [handle] = await window.showOpenFilePicker({
+                types: [{ accept: { 'application/json': ['.json'] } }],
+                excludeAcceptAllOption: true,
+                multiple: false
+            });
+            
+            const file = await handle.getFile();
+            const fileContent = await file.text();
+            const data = JSON.parse(fileContent);
+            
+            if (this.verifyChecksum(data)) {
+                this.currentSettings = data;
+                this.ensureSettingsStructure();
+                await this.saveToFile();
+                this.saveSettings();
+                return true;
+            }
+            
+            return false;
+        } catch (err) {
+            console.error('从备份恢复失败:', err);
+            return false;
+        }
+    }
+    
+    // 验证单个导航项
+    validateItem(item) {
+        if (!item || typeof item !== 'object') {
+            return false;
+        }
+        
+        // 验证必填字段
+        if (!item.name || typeof item.name !== 'string') {
+            return false;
+        }
+        
+        if (!item.url || typeof item.url !== 'string') {
+            return false;
+        }
+        
+        // 验证URL格式
+        try {
+            new URL(item.url);
+        } catch (e) {
+            return false;
+        }
+        
+        // 验证可选字段
+        if (item.id !== undefined && typeof item.id !== 'number') {
+            return false;
+        }
+        
+        if (item.icon !== undefined && typeof item.icon !== 'string') {
+            return false;
+        }
+        
+        if (item.toolGroupId !== undefined && typeof item.toolGroupId !== 'number' && item.toolGroupId !== null) {
+            return false;
+        }
+        
+        return true;
+    }
+    
+    // 验证navigationItems数组
+    validateNavigationItems(items) {
+        if (!Array.isArray(items)) {
+            return false;
+        }
+        
+        // 验证每个导航项
+        for (const item of items) {
+            if (!this.validateItem(item)) {
+                return false;
+            }
+        }
+        
+        // 验证id唯一性
+        const ids = items.map(item => item.id).filter(id => id !== undefined);
+        const uniqueIds = new Set(ids);
+        if (ids.length !== uniqueIds.size) {
+            return false;
+        }
+        
+        return true;
+    }
+    
+    // 验证完整设置数据
+    validateSettings(settings) {
+        if (!settings || typeof settings !== 'object') {
+            return false;
+        }
+        
+        // 验证navigationItems
+        if (!this.validateNavigationItems(settings.navigationItems)) {
+            return false;
+        }
+        
+        // 验证其他必要字段
+        if (!settings.layout || typeof settings.layout !== 'object') {
+            return false;
+        }
+        
+        if (!settings.search || typeof settings.search !== 'object') {
+            return false;
+        }
+        
+        if (settings.toolGroups !== undefined && !Array.isArray(settings.toolGroups)) {
+            return false;
+        }
+        
+        return true;
     }
 
     exportSettings() {
@@ -197,17 +544,185 @@ class NavigationModel {
         const dataBlob = new Blob([dataStr], { type: 'application/json' });
         return URL.createObjectURL(dataBlob);
     }
+    
+    // 使用File System API导出设置
+    async exportSettingsWithFileSystem() {
+        try {
+            if (!this.isFileSystemAPISupported()) {
+                console.error('浏览器不支持File System Access API');
+                return false;
+            }
+            
+            // 更新时间戳和校验和
+            this.currentSettings.timestamp = Date.now();
+            this.currentSettings.checksum = this.generateChecksum(this.currentSettings);
+            
+            const fileHandle = await window.showSaveFilePicker({
+                suggestedName: `nav-settings-${new Date().toISOString().split('T')[0]}.json`,
+                types: [{ accept: { 'application/json': ['.json'] } }],
+                excludeAcceptAllOption: true
+            });
+            
+            const writable = await fileHandle.createWritable({
+                keepExistingData: false
+            });
+            
+            await writable.write(JSON.stringify(this.currentSettings, null, 2));
+            await writable.close();
+            
+            return true;
+        } catch (err) {
+            console.error('使用File System API导出失败:', err);
+            return false;
+        }
+    }
+    
+    // 使用File System API导入设置
+    async importSettingsWithFileSystem() {
+        try {
+            if (!this.isFileSystemAPISupported()) {
+                console.error('浏览器不支持File System Access API');
+                return false;
+            }
+            
+            const [fileHandle] = await window.showOpenFilePicker({
+                types: [{ accept: { 'application/json': ['.json'] } }],
+                excludeAcceptAllOption: true,
+                multiple: false
+            });
+            
+            const file = await fileHandle.getFile();
+            const fileContent = await file.text();
+            
+            return this.importSettings(fileContent);
+        } catch (err) {
+            console.error('使用File System API导入失败:', err);
+            return false;
+        }
+    }
 
     importSettings(jsonData) {
         try {
             const imported = JSON.parse(jsonData);
-            this.currentSettings = imported;
-            this.saveSettings();
-            return true;
+            
+            // 确保必要属性存在
+            if (!imported.toolGroups) {
+                imported.toolGroups = [];
+            }
+            if (!imported.search) {
+                imported.search = this.defaultSettings.search;
+            }
+            if (!imported.layout) {
+                imported.layout = this.defaultSettings.layout;
+            }
+            if (!imported.navigationItems) {
+                imported.navigationItems = [];
+            }
+            
+            // 验证导入的数据
+            if (this.validateSettings(imported)) {
+                this.currentSettings = imported;
+                this.ensureSettingsStructure();
+                this.saveSettings();
+                return true;
+            } else {
+                console.error('导入的数据无效');
+                return false;
+            }
         } catch (e) {
             console.error('导入设置失败', e);
             return false;
         }
+    }
+
+    // 工具组相关方法
+    getToolGroups() {
+        return this.currentSettings.toolGroups;
+    }
+
+    addToolGroup(group) {
+        const newId = Math.max(...this.currentSettings.toolGroups.map(g => g.id), 0) + 1;
+        const newGroup = { id: newId, name: '新工具组', items: [], ...group };
+        this.currentSettings.toolGroups.push(newGroup);
+        this.saveSettings();
+        return newGroup;
+    }
+
+    updateToolGroup(id, updates) {
+        const index = this.currentSettings.toolGroups.findIndex(group => group.id === id);
+        if (index !== -1) {
+            this.currentSettings.toolGroups[index] = { ...this.currentSettings.toolGroups[index], ...updates };
+            this.saveSettings();
+            return true;
+        }
+        return false;
+    }
+
+    deleteToolGroup(id) {
+        const index = this.currentSettings.toolGroups.findIndex(group => group.id === id);
+        if (index !== -1) {
+            this.currentSettings.toolGroups.splice(index, 1);
+            this.saveSettings();
+            return true;
+        }
+        return false;
+    }
+
+    addItemToToolGroup(groupId, item) {
+        const group = this.currentSettings.toolGroups.find(g => g.id === groupId);
+        if (group) {
+            // 确保item有id
+            if (!item.id) {
+                const newId = Math.max(...group.items.map(i => i.id), 0) + 1;
+                item.id = newId;
+            }
+            group.items.push(item);
+            this.saveSettings();
+            return true;
+        }
+        return false;
+    }
+
+    removeItemFromToolGroup(groupId, itemId) {
+        const group = this.currentSettings.toolGroups.find(g => g.id === groupId);
+        if (group) {
+            const index = group.items.findIndex(item => item.id === itemId);
+            if (index !== -1) {
+                group.items.splice(index, 1);
+                this.saveSettings();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 搜索设置相关方法
+    getSearchSettings() {
+        return this.currentSettings.search;
+    }
+
+    updateSearchSettings(updates) {
+        this.currentSettings.search = { ...this.currentSettings.search, ...updates };
+        this.saveSettings();
+        return true;
+    }
+
+    getSearchEngine() {
+        return this.currentSettings.search.engine;
+    }
+
+    setSearchEngine(engine) {
+        this.currentSettings.search.engine = engine;
+        this.saveSettings();
+    }
+
+    getSearchOpacity() {
+        return this.currentSettings.search.opacity;
+    }
+
+    setSearchOpacity(opacity) {
+        this.currentSettings.search.opacity = opacity;
+        this.saveSettings();
     }
 }
 
@@ -227,6 +742,8 @@ class NavigationApp {
         this.updateWallpaper();
         this.updateLayoutControls();
         this.renderNavList();
+        this.renderToolgroupList();
+        this.initSearchSettings();
         this.hideAllMenus();
     }
 
@@ -239,9 +756,29 @@ class NavigationApp {
         this.closeSettings = document.getElementById('close-settings');
         this.addNavBtn = document.getElementById('add-nav-btn');
 
+        // 搜索相关元素
+        this.searchComponent = document.querySelector('.search-component');
+        this.searchEngineSelect = document.getElementById('search-engine');
+        this.searchInput = document.getElementById('search-input');
+
         // 右键菜单
         this.iconContextMenu = document.getElementById('icon-context-menu');
         this.wallpaperContextMenu = document.getElementById('wallpaper-context-menu');
+        this.toolgroupContextMenu = document.getElementById('toolgroup-context-menu');
+
+        // 工具组相关元素
+        this.toolgroupPanel = document.getElementById('toolgroup-panel');
+        this.toolgroupPanelTitle = document.getElementById('toolgroup-panel-title');
+        this.closeToolgroupPanelBtn = document.getElementById('close-toolgroup-panel');
+        this.toolgroupItems = document.getElementById('toolgroup-items');
+        this.toolgroupSelectModal = document.getElementById('toolgroup-select-modal');
+        this.toolgroupSelectList = document.getElementById('toolgroup-select-list');
+        this.createNewToolgroupBtn = document.getElementById('create-new-toolgroup');
+        this.selectToolgroupBtn = document.querySelector('.select-toolgroup');
+        this.toolgroupEditModal = document.getElementById('toolgroup-edit-modal');
+        this.toolgroupEditTitle = document.getElementById('toolgroup-edit-title');
+        this.toolgroupEditForm = document.getElementById('toolgroup-edit-form');
+        this.toolgroupNameInput = document.getElementById('toolgroup-name');
 
         // 设置面板元素
         this.wallpaperUpload = document.getElementById('wallpaper-upload');
@@ -249,16 +786,26 @@ class NavigationApp {
         this.resetWallpaperBtn = document.getElementById('reset-wallpaper');
         this.navList = document.getElementById('nav-list');
         this.addNavItemBtn = document.getElementById('add-nav-item');
+        this.toolgroupList = document.getElementById('toolgroup-list');
+        this.addToolgroupBtn = document.getElementById('add-toolgroup');
         this.columnsSlider = document.getElementById('columns');
         this.columnsValue = document.getElementById('columns-value');
         this.spacingSlider = document.getElementById('spacing');
         this.spacingValue = document.getElementById('spacing-value');
         this.iconSizeSlider = document.getElementById('icon-size');
         this.iconSizeValue = document.getElementById('icon-size-value');
+        this.searchOpacitySlider = document.getElementById('search-opacity');
+        this.searchOpacityValue = document.getElementById('search-opacity-value');
         this.exportDataBtn = document.getElementById('export-data');
         this.importDataBtn = document.getElementById('import-data');
         this.importFile = document.getElementById('import-file');
         this.resetDataBtn = document.getElementById('reset-data');
+        
+        // 文件存储控制
+        this.enableFileStorageCheckbox = document.getElementById('enable-file-storage');
+        this.selectStorageFileBtn = document.getElementById('select-storage-file');
+        this.manualBackupBtn = document.getElementById('manual-backup');
+        this.restoreBackupBtn = document.getElementById('restore-backup');
 
         // 编辑模态框
         this.editModal = document.getElementById('edit-modal');
@@ -292,12 +839,19 @@ class NavigationApp {
         this.columnsSlider.addEventListener('input', () => this.updateLayout());
         this.spacingSlider.addEventListener('input', () => this.updateLayout());
         this.iconSizeSlider.addEventListener('input', () => this.updateLayout());
+        this.searchOpacitySlider.addEventListener('input', () => this.updateSearchOpacitySetting());
 
         // 数据管理
         this.exportDataBtn.addEventListener('click', () => this.exportSettings());
         this.importDataBtn.addEventListener('click', () => this.importFile.click());
         this.importFile.addEventListener('change', (e) => this.handleImportFile(e));
         this.resetDataBtn.addEventListener('click', () => this.resetSettings());
+        
+        // 文件存储控制
+        this.enableFileStorageCheckbox.addEventListener('change', (e) => this.toggleFileStorage(e.target.checked));
+        this.selectStorageFileBtn.addEventListener('click', () => this.selectStorageFile());
+        this.manualBackupBtn.addEventListener('click', () => this.performManualBackup());
+        this.restoreBackupBtn.addEventListener('click', () => this.restoreFromManualBackup());
 
         // 导航管理
         this.addNavItemBtn.addEventListener('click', () => this.openEditModal());
@@ -307,8 +861,115 @@ class NavigationApp {
         this.editForm.addEventListener('submit', (e) => this.handleEditSubmit(e));
         this.editIcon.addEventListener('change', (e) => this.previewIcon(e));
         this.closeModalBtns.forEach(btn => {
-            btn.addEventListener('click', () => this.closeEditModal());
+            btn.addEventListener('click', () => {
+                this.closeEditModal();
+                this.closeToolgroupEditModal();
+                this.toolgroupSelectModal.classList.remove('active');
+            });
         });
+
+        // 工具组相关事件
+        // 关闭工具组面板
+        this.closeToolgroupPanelBtn.addEventListener('click', () => {
+            this.closeToolgroupPanel();
+        });
+        // 点击面板外部关闭
+        this.toolgroupPanel.addEventListener('click', (e) => {
+            if (e.target === this.toolgroupPanel) {
+                this.closeToolgroupPanel();
+            }
+        });
+
+        // 工具组选择模态框
+        this.createNewToolgroupBtn.addEventListener('click', () => {
+            this.toolgroupSelectModal.classList.remove('active');
+            // 保存当前要添加到工具组的导航项ID
+            this.tempAddToToolgroupId = this.currentEditItemId;
+            this.openToolgroupEditModal();
+        });
+
+        this.selectToolgroupBtn.addEventListener('click', () => {
+            const selectedGroupId = document.querySelector('input[name="toolgroup"]:checked');
+            if (selectedGroupId) {
+                const groupId = parseInt(selectedGroupId.value);
+                const navItem = this.model.getNavigationItems().find(item => item.id === this.currentEditItemId);
+                if (navItem) {
+                    const addResult = this.model.addItemToToolGroup(groupId, navItem);
+                    if (addResult) {
+                        // 删除原导航项
+                        const deleteResult = this.model.deleteNavigationItem(this.currentEditItemId);
+                        if (deleteResult) {
+                            this.renderNavList();
+                            this.renderToolgroupList();
+                            this.renderNavigationGrid();
+                            this.showToast('已添加到工具组');
+                        } else {
+                            this.showToast('添加到工具组失败，请重试', 'error');
+                        }
+                    } else {
+                        this.showToast('添加到工具组失败，请重试', 'error');
+                    }
+                }
+            } else {
+                this.showToast('请选择一个工具组', 'error');
+            }
+            this.toolgroupSelectModal.classList.remove('active');
+            this.currentEditItemId = null;
+        });
+
+        // 工具组编辑模态框
+        this.toolgroupEditForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const name = this.toolgroupNameInput.value.trim();
+            if (!name) {
+                this.showToast('请输入工具组名称', 'error');
+                return;
+            }
+
+            let newGroupId = null;
+            if (this.currentEditItemId) {
+                // 更新现有工具组
+                this.model.updateToolGroup(this.currentEditItemId, { name });
+                this.showToast('工具组已更新');
+            } else {
+                // 创建新工具组
+                const newGroup = this.model.addToolGroup({ name });
+                newGroupId = newGroup.id;
+                this.showToast('工具组已创建');
+            }
+
+            // 检查是否有要添加到工具组的导航项
+            if (this.tempAddToToolgroupId && newGroupId) {
+                const navItem = this.model.getNavigationItems().find(item => item.id === this.tempAddToToolgroupId);
+                if (navItem) {
+                    const addResult = this.model.addItemToToolGroup(newGroupId, navItem);
+                    if (addResult) {
+                        // 删除原导航项
+                        const deleteResult = this.model.deleteNavigationItem(this.tempAddToToolgroupId);
+                        if (deleteResult) {
+                            this.renderNavList();
+                            this.renderToolgroupList();
+                            this.renderNavigationGrid();
+                            this.showToast('已将导航项添加到新工具组');
+                        } else {
+                            this.model.deleteToolGroup(newGroupId);
+                            this.showToast('添加到工具组失败，请重试', 'error');
+                        }
+                    } else {
+                        this.model.deleteToolGroup(newGroupId);
+                        this.showToast('添加到工具组失败，请重试', 'error');
+                    }
+                }
+                this.tempAddToToolgroupId = null;
+            }
+
+            this.renderNavigationGrid();
+            this.renderToolgroupList();
+            this.closeToolgroupEditModal();
+        });
+
+        // 工具组管理
+        this.addToolgroupBtn.addEventListener('click', () => this.openToolgroupEditModal());
 
         // 全局点击关闭菜单
         document.addEventListener('click', (e) => {
@@ -317,43 +978,73 @@ class NavigationApp {
             }
         });
 
+        // 搜索相关事件
+        this.searchEngineSelect.addEventListener('change', (e) => {
+            this.handleSearchEngineChange(e.target.value);
+        });
+
+        this.searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.handleSearch();
+            }
+        });
+
         // 键盘事件
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 this.hideAllMenus();
                 this.closeEditModal();
+                this.closeToolgroupEditModal();
                 this.closeSettingsPanel();
+                this.toolgroupSelectModal.classList.remove('active');
             }
         });
     }
 
     // 导航网格渲染
     renderNavigationGrid() {
-        this.navGrid.innerHTML = '';
         const items = this.model.getNavigationItems();
+        const toolGroups = this.model.getToolGroups();
         const layout = this.model.getLayout();
 
+        // 创建文档片段，减少DOM操作次数
+        const fragment = document.createDocumentFragment();
+
         // 更新网格样式
-        this.navGrid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${120 - (5 - layout.columns) * 10}px, 1fr))`;
+        // 修复列数计算逻辑：列数越多，每列宽度越小，从而显示更多列
+        const baseWidth = 200;
+        const widthDecrement = 15;
+        const minItemWidth = Math.max(80, baseWidth - (layout.columns - 6) * widthDecrement);
+        this.navGrid.style.gridTemplateColumns = `repeat(${layout.columns}, minmax(${minItemWidth}px, 1fr))`;
         this.navGrid.style.gap = `${layout.spacing}px`;
 
+        // 渲染普通导航项
         items.forEach(item => {
-            if (item.type === 'group') {
-                this.renderGroupItem(item, layout);
-            } else {
-                this.renderRegularItem(item, layout);
-            }
+            const navItem = this.createNavItem(item, layout);
+            fragment.appendChild(navItem);
         });
-    }
 
-    // 渲染普通导航项
-    renderRegularItem(item, layout) {
+        // 渲染工具组项
+        toolGroups.forEach(group => {
+            const groupItem = this.createToolgroupItem(group, layout);
+            fragment.appendChild(groupItem);
+        });
+
+        // 一次性将所有元素添加到DOM中
+        this.navGrid.innerHTML = '';
+        this.navGrid.appendChild(fragment);
+    }
+    
+    // 创建单个导航项元素
+    createNavItem(item, layout) {
         const navItem = document.createElement('a');
         navItem.href = item.url;
         navItem.target = '_blank';
         navItem.className = 'nav-item';
         navItem.dataset.id = item.id;
+        navItem.dataset.type = 'nav-item';
         navItem.style.setProperty('--icon-size', `${layout.iconSize}px`);
+        navItem.draggable = true;
 
         navItem.innerHTML = `
             <div class="nav-item-icon" style="width: ${layout.iconSize}px; height: ${layout.iconSize}px; font-size: ${layout.iconSize * 0.6}px">
@@ -369,127 +1060,385 @@ class NavigationApp {
             this.showContextMenu(e, this.iconContextMenu);
         });
 
-        this.navGrid.appendChild(navItem);
+        // 拖拽事件
+        navItem.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', JSON.stringify({
+                type: 'nav-item',
+                id: item.id
+            }));
+            navItem.style.opacity = '0.5';
+            navItem.classList.add('dragging');
+        });
+
+        navItem.addEventListener('dragend', () => {
+            navItem.style.opacity = '1';
+            navItem.classList.remove('dragging');
+            document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        });
+
+        navItem.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            navItem.classList.add('drag-over');
+        });
+
+        navItem.addEventListener('dragleave', () => {
+            navItem.classList.remove('drag-over');
+        });
+
+        navItem.addEventListener('drop', (e) => {
+            e.preventDefault();
+            navItem.classList.remove('drag-over');
+
+            try {
+                const draggedData = JSON.parse(e.dataTransfer.getData('text/plain'));
+                if (draggedData.type === 'nav-item') {
+                    if (draggedData.id !== item.id) {
+                        // 获取当前所有导航项
+                        const items = [...this.model.getNavigationItems()];
+                        // 找到拖拽项和目标项的索引
+                        const draggedIndex = items.findIndex(i => i.id === draggedData.id);
+                        const targetIndex = items.findIndex(i => i.id === item.id);
+                        
+                        if (draggedIndex !== -1 && targetIndex !== -1) {
+                            // 重新排序
+                            const [draggedItem] = items.splice(draggedIndex, 1);
+                            items.splice(targetIndex, 0, draggedItem);
+                            
+                            // 保存新顺序
+                            const success = this.model.reorderNavigationItems(items);
+                            if (success) {
+                                // 重新渲染导航网格
+                                this.renderNavigationGrid();
+                                this.showToast('排序已保存');
+                            } else {
+                                this.showToast('排序保存失败', 'error');
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('拖拽数据解析失败:', error);
+                this.showToast('排序失败', 'error');
+            }
+        });
+
+        return navItem;
     }
-
-    // 渲染工具组项
-    renderGroupItem(item, layout) {
-        const groupContainer = document.createElement('div');
-        groupContainer.className = 'nav-group-container';
-        groupContainer.dataset.id = item.id;
-
-        // 工具组标题项
+    
+    // 创建单个工具组项元素
+    createToolgroupItem(group, layout) {
         const groupItem = document.createElement('div');
-        groupItem.className = 'nav-item nav-group-item';
-        groupItem.dataset.id = item.id;
+        groupItem.className = 'nav-item toolgroup-item';
+        groupItem.dataset.id = group.id;
+        groupItem.dataset.type = 'toolgroup';
         groupItem.style.setProperty('--icon-size', `${layout.iconSize}px`);
+        groupItem.draggable = true;
 
-        // 获取工具组的子项图标
-        const childrenItems = this.model.getNavigationItems().filter(child => 
-            item.children && item.children.includes(child.id)
-        );
+        // 生成工具组缩略图（显示前4个图标）
+        const previewIcons = group.items.slice(0, 4).map(item => item.icon || '🔗').join('');
+        const emptySlots = Math.max(0, 4 - group.items.length);
+        const placeholderIcons = '⬜'.repeat(emptySlots);
+        const allPreviewIcons = previewIcons + placeholderIcons;
 
-        let groupContent = `
-            <div class="nav-item-icon" style="width: ${layout.iconSize}px; height: ${layout.iconSize}px; font-size: ${layout.iconSize * 0.6}px">
-                ${item.icon || '📦'}
+        groupItem.innerHTML = `
+            <div class="nav-item-icon toolgroup-icon" style="width: ${layout.iconSize}px; height: ${layout.iconSize}px; font-size: ${layout.iconSize * 0.35}px">
+                <div class="toolgroup-preview-icons">${allPreviewIcons}</div>
             </div>
-            <div class="nav-item-name">${item.name}</div>
+            <div class="nav-item-name">${group.name}</div>
+            <div class="toolgroup-item-count">(${group.items.length}项)</div>
         `;
 
-        // 如果有子项，添加子项图标缩略图
-        if (childrenItems.length > 0) {
-            groupContent += '<div class="nav-group-thumbnails">';
-            childrenItems.slice(0, 4).forEach(child => {
-                groupContent += `<span class="nav-group-thumbnail" title="${child.name}">${child.icon || '🔗'}</span>`;
-            });
-            if (childrenItems.length > 4) {
-                groupContent += `<span class="nav-group-more">+${childrenItems.length - 4}</span>`;
-            }
-            groupContent += '</div>';
-        }
-
-        groupItem.innerHTML = groupContent;
-
-        // 工具组点击事件 - 切换展开/折叠
-        groupItem.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.toggleGroupExpand(item.id, groupContainer, layout);
+        // 点击事件：展开工具组面板
+        groupItem.addEventListener('click', () => {
+            this.openToolgroupPanel(group.id);
         });
 
-        // 工具组右键菜单
+        // 右键菜单
         groupItem.addEventListener('contextmenu', (e) => {
             e.preventDefault();
-            this.currentEditItemId = item.id;
-            this.showContextMenu(e, this.iconContextMenu);
+            this.currentEditItemId = group.id;
+            this.showContextMenu(e, this.toolgroupContextMenu);
         });
 
-        groupContainer.appendChild(groupItem);
-        this.navGrid.appendChild(groupContainer);
+        // 拖拽事件
+        groupItem.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', JSON.stringify({
+                type: 'toolgroup',
+                id: group.id
+            }));
+            groupItem.style.opacity = '0.5';
+        });
+
+        groupItem.addEventListener('dragend', () => {
+            groupItem.style.opacity = '1';
+        });
+
+        groupItem.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            groupItem.classList.add('drag-over');
+        });
+
+        groupItem.addEventListener('dragleave', () => {
+            groupItem.classList.remove('drag-over');
+        });
+
+        groupItem.addEventListener('drop', (e) => {
+            e.preventDefault();
+            groupItem.classList.remove('drag-over');
+
+            try {
+                const draggedData = JSON.parse(e.dataTransfer.getData('text/plain'));
+                if (draggedData.type === 'nav-item') {
+                    // 将导航项添加到工具组
+                    const navItem = this.model.getNavigationItems().find(i => i.id === draggedData.id);
+                    if (navItem) {
+                        const addResult = this.model.addItemToToolGroup(group.id, navItem);
+                        if (addResult) {
+                            // 删除原导航项
+                            const deleteResult = this.model.deleteNavigationItem(draggedData.id);
+                            if (deleteResult) {
+                                this.renderNavList();
+                                this.renderToolgroupList();
+                                this.renderNavigationGrid();
+                                this.showToast('已添加到工具组');
+                            } else {
+                                this.showToast('添加到工具组失败，请重试', 'error');
+                            }
+                        } else {
+                            this.showToast('添加到工具组失败，请重试', 'error');
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('拖拽数据解析失败:', error);
+            }
+        });
+
+        return groupItem;
     }
+    
+    // 原始导航网格渲染方法（已优化）
+    renderNavigationGridOld() {
+        this.navGrid.innerHTML = '';
+        const items = this.model.getNavigationItems();
+        const toolGroups = this.model.getToolGroups();
+        const layout = this.model.getLayout();
 
-    // 切换工具组展开/折叠状态
-    toggleGroupExpand(groupId, groupContainer, layout) {
-        const expandedSection = groupContainer.querySelector('.nav-group-expanded');
-        
-        if (expandedSection) {
-            // 折叠状态
-            expandedSection.remove();
-        } else {
-            // 展开状态
-            this.renderGroupExpanded(groupId, groupContainer, layout);
-        }
-    }
+        // 更新网格样式
+        this.navGrid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${120 - (5 - layout.columns) * 10}px, 1fr))`;
+        this.navGrid.style.gap = `${layout.spacing}px`;
 
-    // 渲染展开的工具组
-    renderGroupExpanded(groupId, groupContainer, layout) {
-        const groupItem = this.model.getNavigationItems().find(item => item.id === groupId);
-        if (!groupItem || !groupItem.children) return;
+        // 渲染普通导航项
+        items.forEach(item => {
+            const navItem = document.createElement('a');
+            navItem.href = item.url;
+            navItem.target = '_blank';
+            navItem.className = 'nav-item';
+            navItem.dataset.id = item.id;
+            navItem.dataset.type = 'nav-item';
+            navItem.style.setProperty('--icon-size', `${layout.iconSize}px`);
+            navItem.draggable = true;
 
-        const expandedSection = document.createElement('div');
-        expandedSection.className = 'nav-group-expanded';
-        expandedSection.dataset.groupId = groupId;
-
-        // 获取所有子项
-        const childrenItems = this.model.getNavigationItems().filter(child => 
-            groupItem.children.includes(child.id)
-        );
-
-        childrenItems.forEach(child => {
-            const childElement = document.createElement('a');
-            childElement.href = child.url;
-            childElement.target = '_blank';
-            childElement.className = 'nav-item nav-group-child';
-            childElement.dataset.id = child.id;
-            childElement.dataset.parentId = groupId;
-            childElement.style.setProperty('--icon-size', `${layout.iconSize * 0.8}px`);
-
-            childElement.innerHTML = `
-                <div class="nav-item-icon" style="width: ${layout.iconSize * 0.8}px; height: ${layout.iconSize * 0.8}px; font-size: ${layout.iconSize * 0.48}px">
-                    ${child.icon || '🔗'}
+            navItem.innerHTML = `
+                <div class="nav-item-icon" style="width: ${layout.iconSize}px; height: ${layout.iconSize}px; font-size: ${layout.iconSize * 0.6}px">
+                    ${item.icon || '🔗'}
                 </div>
-                <div class="nav-item-name">${child.name}</div>
+                <div class="nav-item-name">${item.name}</div>
             `;
 
-            // 子项右键菜单
-            childElement.addEventListener('contextmenu', (e) => {
+            // 右键菜单
+            navItem.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                this.currentEditItemId = child.id;
+                this.currentEditItemId = item.id;
                 this.showContextMenu(e, this.iconContextMenu);
             });
 
-            expandedSection.appendChild(childElement);
+            // 拖拽事件
+            navItem.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', JSON.stringify({
+                    type: 'nav-item',
+                    id: item.id
+                }));
+                navItem.style.opacity = '0.5';
+                navItem.classList.add('dragging');
+            });
+
+            navItem.addEventListener('dragend', () => {
+                navItem.style.opacity = '1';
+                navItem.classList.remove('dragging');
+                document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+            });
+
+            navItem.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                navItem.classList.add('drag-over');
+            });
+
+            navItem.addEventListener('dragleave', () => {
+                navItem.classList.remove('drag-over');
+            });
+
+            navItem.addEventListener('drop', (e) => {
+                e.preventDefault();
+                navItem.classList.remove('drag-over');
+
+                try {
+                    const draggedData = JSON.parse(e.dataTransfer.getData('text/plain'));
+                    if (draggedData.type === 'nav-item') {
+                        if (draggedData.id !== item.id) {
+                            // 获取当前所有导航项
+                            const items = [...this.model.getNavigationItems()];
+                            // 找到拖拽项和目标项的索引
+                            const draggedIndex = items.findIndex(i => i.id === draggedData.id);
+                            const targetIndex = items.findIndex(i => i.id === item.id);
+                            
+                            if (draggedIndex !== -1 && targetIndex !== -1) {
+                                // 重新排序
+                                const [draggedItem] = items.splice(draggedIndex, 1);
+                                items.splice(targetIndex, 0, draggedItem);
+                                
+                                // 保存新顺序
+                                const success = this.model.reorderNavigationItems(items);
+                                if (success) {
+                                    // 重新渲染导航网格
+                                    this.renderNavigationGrid();
+                                    this.showToast('排序已保存');
+                                } else {
+                                    this.showToast('排序保存失败', 'error');
+                                }
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('拖拽数据解析失败:', error);
+                    this.showToast('排序失败', 'error');
+                }
+            });
+
+            this.navGrid.appendChild(navItem);
         });
 
-        groupContainer.appendChild(expandedSection);
+        // 渲染工具组项
+        toolGroups.forEach(group => {
+            const groupItem = document.createElement('div');
+            groupItem.className = 'nav-item toolgroup-item';
+            groupItem.dataset.id = group.id;
+            groupItem.dataset.type = 'toolgroup';
+            groupItem.style.setProperty('--icon-size', `${layout.iconSize}px`);
+            groupItem.draggable = true;
+
+            // 生成工具组缩略图（显示前4个图标）
+            const previewIcons = group.items.slice(0, 4).map(item => item.icon || '🔗').join('');
+            const emptySlots = Math.max(0, 4 - group.items.length);
+            const placeholderIcons = '⬜'.repeat(emptySlots);
+            const allPreviewIcons = previewIcons + placeholderIcons;
+
+            groupItem.innerHTML = `
+                <div class="nav-item-icon toolgroup-icon" style="width: ${layout.iconSize}px; height: ${layout.iconSize}px; font-size: ${layout.iconSize * 0.35}px">
+                    <div class="toolgroup-preview-icons">${allPreviewIcons}</div>
+                </div>
+                <div class="nav-item-name">${group.name}</div>
+                <div class="toolgroup-item-count">(${group.items.length}项)</div>
+            `;
+
+            // 点击事件：展开工具组面板
+            groupItem.addEventListener('click', () => {
+                this.openToolgroupPanel(group.id);
+            });
+
+            // 右键菜单
+            groupItem.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                this.currentEditItemId = group.id;
+                this.showContextMenu(e, this.toolgroupContextMenu);
+            });
+
+            // 拖拽事件
+            groupItem.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', JSON.stringify({
+                    type: 'toolgroup',
+                    id: group.id
+                }));
+                groupItem.style.opacity = '0.5';
+            });
+
+            groupItem.addEventListener('dragend', () => {
+                groupItem.style.opacity = '1';
+            });
+
+            groupItem.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                groupItem.classList.add('drag-over');
+            });
+
+            groupItem.addEventListener('dragleave', () => {
+                groupItem.classList.remove('drag-over');
+            });
+
+            groupItem.addEventListener('drop', (e) => {
+                e.preventDefault();
+                groupItem.classList.remove('drag-over');
+
+                try {
+                    const draggedData = JSON.parse(e.dataTransfer.getData('text/plain'));
+                    if (draggedData.type === 'nav-item') {
+                        // 将导航项添加到工具组
+                        const navItem = this.model.getNavigationItems().find(i => i.id === draggedData.id);
+                        if (navItem) {
+                            const addResult = this.model.addItemToToolGroup(group.id, navItem);
+                            if (addResult) {
+                                // 删除原导航项
+                                const deleteResult = this.model.deleteNavigationItem(draggedData.id);
+                                if (deleteResult) {
+                                    this.renderNavList();
+                                    this.renderToolgroupList();
+                                    this.renderNavigationGrid();
+                                    this.showToast('已添加到工具组');
+                                } else {
+                                    this.showToast('添加到工具组失败，请重试', 'error');
+                                }
+                            } else {
+                                this.showToast('添加到工具组失败，请重试', 'error');
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('拖拽数据解析失败:', error);
+                }
+            });
+
+            this.navGrid.appendChild(groupItem);
+        });
     }
 
     // 壁纸相关
     updateWallpaper() {
         const wallpaper = this.model.getWallpaper();
         if (wallpaper) {
+            // 设置壁纸元素样式
             this.wallpaperElement.style.backgroundImage = `url(${wallpaper})`;
+            this.wallpaperElement.style.backgroundSize = 'cover';
+            this.wallpaperElement.style.backgroundRepeat = 'no-repeat';
+            this.wallpaperElement.style.backgroundPosition = 'center';
+            this.wallpaperElement.style.backgroundAttachment = 'fixed';
+            
+            // 设置壁纸预览元素样式
             if (this.wallpaperPreview) {
                 this.wallpaperPreview.style.backgroundImage = `url(${wallpaper})`;
+                this.wallpaperPreview.style.backgroundSize = 'cover';
+                this.wallpaperPreview.style.backgroundRepeat = 'no-repeat';
+                this.wallpaperPreview.style.backgroundPosition = 'center';
+            }
+        } else {
+            // 恢复默认背景
+            this.wallpaperElement.style.backgroundImage = '';
+            this.wallpaperElement.style.backgroundSize = 'cover';
+            this.wallpaperElement.style.backgroundRepeat = 'no-repeat';
+            this.wallpaperElement.style.backgroundPosition = 'center';
+            this.wallpaperElement.style.backgroundAttachment = 'fixed';
+            
+            if (this.wallpaperPreview) {
+                this.wallpaperPreview.style.backgroundImage = '';
             }
         }
     }
@@ -528,6 +1477,11 @@ class NavigationApp {
         this.spacingValue.textContent = layout.spacing;
         this.iconSizeSlider.value = layout.iconSize;
         this.iconSizeValue.textContent = layout.iconSize;
+        
+        // 设置搜索透明度滑块
+        const searchSettings = this.model.getSearchSettings();
+        this.searchOpacitySlider.value = Math.round((1 - searchSettings.opacity) * 100);
+        this.searchOpacityValue.textContent = Math.round((1 - searchSettings.opacity) * 100);
     }
 
     updateLayout() {
@@ -553,47 +1507,17 @@ class NavigationApp {
         items.forEach(item => {
             const listItem = document.createElement('div');
             listItem.className = 'nav-list-item';
-            
-            let itemContent;
-            if (item.type === 'group') {
-                // 工具组项
-                const childCount = item.children ? item.children.length : 0;
-                itemContent = `
-                    <div>
-                        <strong>${item.name}</strong>
-                        <div style="font-size: 0.8em; color: #718096">
-                            <span style="background: #4f46e5; color: white; padding: 2px 6px; border-radius: 10px; font-size: 0.7em; margin-right: 8px;">工具组</span>
-                            包含 ${childCount} 个项
-                        </div>
-                    </div>
-                    <div>
-                        <button class="btn secondary edit-item" data-id="${item.id}">编辑</button>
-                        <button class="btn danger delete-item" data-id="${item.id}">删除</button>
-                    </div>
-                `;
-            } else {
-                // 普通项
-                itemContent = `
-                    <div>
-                        <strong>${item.name}</strong>
-                        <div style="font-size: 0.8em; color: #718096">${item.url}</div>
-                    </div>
-                    <div>
-                        <button class="btn secondary edit-item" data-id="${item.id}">编辑</button>
-                        <button class="btn danger delete-item" data-id="${item.id}">删除</button>
-                    </div>
-                `;
-            }
-            
-            listItem.innerHTML = itemContent;
+            listItem.innerHTML = `
+                <div class="nav-item-info">
+                    <strong class="nav-item-name">${item.name}</strong>
+                </div>
+                <div class="nav-item-actions">
+                    <button class="btn secondary edit-item" data-id="${item.id}">编辑</button>
+                    <button class="btn danger delete-item" data-id="${item.id}">删除</button>
+                </div>
+            `;
 
-            listItem.querySelector('.edit-item').addEventListener('click', () => {
-                if (item.type === 'group') {
-                    this.openEditGroupModal(item.id);
-                } else {
-                    this.openEditModal(item.id);
-                }
-            });
+            listItem.querySelector('.edit-item').addEventListener('click', () => this.openEditModal(item.id));
 
             listItem.querySelector('.delete-item').addEventListener('click', () => {
                 if (confirm(`确定要删除 "${item.name}" 吗？`)) {
@@ -613,11 +1537,6 @@ class NavigationApp {
         event.preventDefault();
         this.hideAllMenus();
 
-        // 如果是图标右键菜单，根据项类型显示不同菜单项
-        if (menuElement.id === 'icon-context-menu') {
-            this.adaptContextMenuForItemType();
-        }
-
         menuElement.style.display = 'block';
         menuElement.style.left = `${event.pageX}px`;
         menuElement.style.top = `${event.pageY}px`;
@@ -631,73 +1550,17 @@ class NavigationApp {
         this.currentContextMenu = menuElement;
     }
 
-    // 根据项类型调整右键菜单
-    adaptContextMenuForItemType() {
-        const item = this.model.getNavigationItems().find(i => i.id === this.currentEditItemId);
-        if (!item) return;
-
-        const menu = this.iconContextMenu;
-        const menuItems = menu.querySelectorAll('li');
-        
-        // 先隐藏所有菜单项
-        menuItems.forEach(item => item.style.display = 'none');
-        
-        if (item.type === 'item') {
-            // 普通项菜单
-            menu.querySelector('[data-action="edit"]').style.display = 'block';
-            menu.querySelector('[data-action="delete"]').style.display = 'block';
-            menu.querySelector('[data-action="move-up"]').style.display = 'block';
-            menu.querySelector('[data-action="move-down"]').style.display = 'block';
-            
-            // 添加"添加到工具组"选项
-            let addToGroupItem = menu.querySelector('[data-action="add-to-group"]');
-            if (!addToGroupItem) {
-                addToGroupItem = document.createElement('li');
-                addToGroupItem.dataset.action = 'add-to-group';
-                addToGroupItem.textContent = '添加到工具组';
-                menu.querySelector('ul').appendChild(addToGroupItem);
-            }
-            addToGroupItem.style.display = 'block';
-        } else if (item.type === 'group') {
-            // 工具组菜单
-            
-            // 添加"编辑工具组"选项
-            let editGroupItem = menu.querySelector('[data-action="edit-group"]');
-            if (!editGroupItem) {
-                editGroupItem = document.createElement('li');
-                editGroupItem.dataset.action = 'edit-group';
-                editGroupItem.textContent = '编辑工具组';
-                menu.querySelector('ul').appendChild(editGroupItem);
-            }
-            editGroupItem.style.display = 'block';
-            
-            // 添加"添加项到工具组"选项
-            let addItemToGroupItem = menu.querySelector('[data-action="add-item-to-group"]');
-            if (!addItemToGroupItem) {
-                addItemToGroupItem = document.createElement('li');
-                addItemToGroupItem.dataset.action = 'add-item-to-group';
-                addItemToGroupItem.textContent = '添加项';
-                menu.querySelector('ul').appendChild(addItemToGroupItem);
-            }
-            addItemToGroupItem.style.display = 'block';
-            
-            // 添加"删除工具组"选项
-            let deleteGroupItem = menu.querySelector('[data-action="delete-group"]');
-            if (!deleteGroupItem) {
-                deleteGroupItem = document.createElement('li');
-                deleteGroupItem.dataset.action = 'delete-group';
-                deleteGroupItem.textContent = '删除工具组';
-                menu.querySelector('ul').appendChild(deleteGroupItem);
-            }
-            deleteGroupItem.style.display = 'block';
-        }
-    }
-
     hideAllMenus() {
-        [this.iconContextMenu, this.wallpaperContextMenu].forEach(menu => {
+        // 隐藏所有右键菜单
+        [this.iconContextMenu, this.wallpaperContextMenu, this.toolgroupContextMenu].forEach(menu => {
             if (menu) menu.style.display = 'none';
         });
         this.currentContextMenu = null;
+
+        // 隐藏工具组面板和模态框
+        this.toolgroupPanel.classList.remove('active');
+        this.toolgroupSelectModal.classList.remove('active');
+        this.toolgroupEditModal.classList.remove('active');
     }
 
     handleContextMenuAction(action) {
@@ -733,27 +1596,35 @@ class NavigationApp {
                     this.renderNavList();
                 }
                 break;
-            case 'add-to-group':
+            case 'add-to-tool-group':
                 if (this.currentEditItemId) {
-                    this.showAddToGroupDialog();
+                    this.openToolgroupSelectModal();
                 }
                 break;
-            case 'edit-group':
+            case 'edit-toolgroup':
                 if (this.currentEditItemId) {
-                    this.openEditGroupModal(this.currentEditItemId);
+                    this.openToolgroupEditModal(this.currentEditItemId);
                 }
                 break;
-            case 'add-item-to-group':
+            case 'add-item':
                 if (this.currentEditItemId) {
-                    this.showAddItemToGroupDialog(this.currentEditItemId);
+                    // 这里可以添加向工具组添加项的逻辑
+                    this.showToast('添加项功能开发中');
                 }
                 break;
-            case 'delete-group':
+            case 'remove-item':
                 if (this.currentEditItemId) {
-                    if (confirm('确定要删除这个工具组吗？')) {
-                        this.model.deleteNavigationItem(this.currentEditItemId);
+                    // 这里可以添加从工具组移除项的逻辑
+                    this.showToast('删除项功能开发中');
+                }
+                break;
+            case 'delete-toolgroup':
+                if (this.currentEditItemId) {
+                    const group = this.model.getToolGroups().find(g => g.id === this.currentEditItemId);
+                    if (group && confirm(`确定要删除工具组 "${group.name}" 吗？`)) {
+                        this.model.deleteToolGroup(this.currentEditItemId);
                         this.renderNavigationGrid();
-                        this.renderNavList();
+                        this.renderToolgroupList();
                         this.showToast('已删除工具组');
                     }
                 }
@@ -768,76 +1639,6 @@ class NavigationApp {
             case 'open-settings':
                 this.openSettingsPanel();
                 break;
-        }
-    }
-
-    // 显示"添加到工具组"对话框
-    showAddToGroupDialog() {
-        const groups = this.model.getNavigationItems().filter(item => item.type === 'group');
-        if (groups.length === 0) {
-            this.showToast('没有可用的工具组，请先创建工具组', 'error');
-            return;
-        }
-
-        const groupNames = groups.map(group => group.name).join('\n');
-        const selectedGroupName = prompt(`请输入要添加到的工具组名称：\n\n可用工具组：\n${groupNames}`);
-        
-        if (selectedGroupName) {
-            const selectedGroup = groups.find(group => group.name === selectedGroupName);
-            if (selectedGroup) {
-                const success = this.model.addItemToGroup(selectedGroup.id, this.currentEditItemId);
-                if (success) {
-                    this.renderNavigationGrid();
-                    this.renderNavList();
-                    this.showToast(`已添加到工具组"${selectedGroupName}"`);
-                } else {
-                    this.showToast('添加失败，该项目可能已在工具组中', 'error');
-                }
-            } else {
-                this.showToast('未找到指定的工具组', 'error');
-            }
-        }
-    }
-
-    // 显示"添加项到工具组"对话框
-    showAddItemToGroupDialog(groupId) {
-        const items = this.model.getNavigationItems().filter(item => item.type === 'item');
-        if (items.length === 0) {
-            this.showToast('没有可用的导航项', 'error');
-            return;
-        }
-
-        const itemNames = items.map(item => item.name).join('\n');
-        const selectedItemName = prompt(`请输入要添加到工具组的项名称：\n\n可用项：\n${itemNames}`);
-        
-        if (selectedItemName) {
-            const selectedItem = items.find(item => item.name === selectedItemName);
-            if (selectedItem) {
-                const success = this.model.addItemToGroup(groupId, selectedItem.id);
-                if (success) {
-                    this.renderNavigationGrid();
-                    this.renderNavList();
-                    this.showToast(`已添加"${selectedItemName}"到工具组`);
-                } else {
-                    this.showToast('添加失败，该项目可能已在工具组中', 'error');
-                }
-            } else {
-                this.showToast('未找到指定的项', 'error');
-            }
-        }
-    }
-
-    // 打开编辑工具组模态框
-    openEditGroupModal(groupId) {
-        const group = this.model.getNavigationItems().find(item => item.id === groupId);
-        if (!group) return;
-
-        const newName = prompt('请输入工具组新名称：', group.name);
-        if (newName && newName.trim() !== group.name) {
-            this.model.updateNavigationItem(groupId, { name: newName.trim() });
-            this.renderNavigationGrid();
-            this.renderNavList();
-            this.showToast('工具组已更新');
         }
     }
 
@@ -868,7 +1669,7 @@ class NavigationApp {
                 this.iconPreview.textContent = item.icon || '';
             }
         } else {
- this           .editName.value = '';
+            this.editName.value = '';
             this.editUrl.value = '';
             this.iconPreview.style.backgroundImage = '';
             this.iconPreview.textContent = '';
@@ -936,6 +1737,27 @@ class NavigationApp {
 
     // 数据管理
     exportSettings() {
+        // 优先使用File System API
+        if (this.model.isFileSystemAPISupported()) {
+            this.model.exportSettingsWithFileSystem().then(success => {
+                if (success) {
+                    this.showToast('设置已导出到本地文件');
+                } else {
+                    // 降级使用传统下载方式
+                    this.exportSettingsWithDownload();
+                }
+            }).catch(err => {
+                console.error('File System API导出失败，使用传统方式:', err);
+                this.exportSettingsWithDownload();
+            });
+        } else {
+            // 浏览器不支持File System API，使用传统下载方式
+            this.exportSettingsWithDownload();
+        }
+    }
+    
+    // 使用传统下载方式导出设置
+    exportSettingsWithDownload() {
         const downloadUrl = this.model.exportSettings();
         const a = document.createElement('a');
         a.href = downloadUrl;
@@ -953,19 +1775,111 @@ class NavigationApp {
 
         const reader = new FileReader();
         reader.onload = (e) => {
-            const success = this.model.importSettings(e.target.result);
-            if (success) {
-                this.renderNavigationGrid();
-                this.updateWallpaper();
-                this.updateLayoutControls();
-                this.renderNavList();
-                this.showToast('设置已导入');
-            } else {
-                this.showToast('导入失败，请检查文件格式', 'error');
-            }
+            this.processImportData(e.target.result);
         };
         reader.readAsText(file);
         event.target.value = '';
+    }
+    
+    // 处理导入的数据
+    processImportData(jsonData) {
+        const success = this.model.importSettings(jsonData);
+        if (success) {
+            this.refreshAllData();
+            this.showToast('设置已导入');
+        } else {
+            this.showToast('导入失败，请检查文件格式', 'error');
+        }
+    }
+    
+    // 刷新所有数据和UI
+    refreshAllData() {
+        this.renderNavigationGrid();
+        this.updateWallpaper();
+        this.updateLayoutControls();
+        this.renderNavList();
+        this.renderToolgroupList();
+    }
+    
+    // 文件存储控制方法
+    toggleFileStorage(enabled) {
+        if (enabled) {
+            if (this.model.isFileSystemAPISupported()) {
+                this.model.initFileStorage().then(success => {
+                    if (success) {
+                        this.model.isFileStorageEnabled = true;
+                        this.showToast('文件存储已启用');
+                    } else {
+                        this.enableFileStorageCheckbox.checked = false;
+                        this.showToast('文件存储初始化失败', 'error');
+                    }
+                }).catch(err => {
+                    this.enableFileStorageCheckbox.checked = false;
+                    this.showToast('文件存储初始化失败', 'error');
+                });
+            } else {
+                this.enableFileStorageCheckbox.checked = false;
+                this.showToast('您的浏览器不支持文件系统访问API', 'error');
+            }
+        } else {
+            this.model.isFileStorageEnabled = false;
+            this.showToast('文件存储已禁用');
+        }
+    }
+    
+    selectStorageFile() {
+        if (this.model.isFileSystemAPISupported()) {
+            this.model.openStorageFile().then(success => {
+                if (success) {
+                    this.model.isFileStorageEnabled = true;
+                    this.enableFileStorageCheckbox.checked = true;
+                    this.showToast('已选择存储文件');
+                    // 重新加载数据
+                    this.model.loadFromFile().then(success => {
+                        if (success) {
+                            this.refreshAllData();
+                        }
+                    });
+                }
+            }).catch(err => {
+                this.showToast('选择存储文件失败', 'error');
+            });
+        } else {
+            this.showToast('您的浏览器不支持文件系统访问API', 'error');
+        }
+    }
+    
+    performManualBackup() {
+        if (this.model.isFileStorageEnabled) {
+            this.model.backupFile().then(success => {
+                if (success) {
+                    this.showToast('手动备份成功');
+                } else {
+                    this.showToast('手动备份失败', 'error');
+                }
+            }).catch(err => {
+                this.showToast('手动备份失败', 'error');
+            });
+        } else {
+            this.showToast('请先启用文件存储', 'error');
+        }
+    }
+    
+    restoreFromManualBackup() {
+        if (this.model.isFileSystemAPISupported()) {
+            this.model.restoreFromBackup().then(success => {
+                if (success) {
+                    this.refreshAllData();
+                    this.showToast('从备份恢复成功');
+                } else {
+                    this.showToast('从备份恢复失败', 'error');
+                }
+            }).catch(err => {
+                this.showToast('从备份恢复失败', 'error');
+            });
+        } else {
+            this.showToast('您的浏览器不支持文件系统访问API', 'error');
+        }
     }
 
     resetSettings() {
@@ -977,6 +1891,243 @@ class NavigationApp {
             this.renderNavList();
             this.showToast('已恢复默认设置');
         }
+    }
+
+    // 工具组相关方法
+    // 打开工具组展开面板
+    openToolgroupPanel(groupId) {
+        const group = this.model.getToolGroups().find(g => g.id === groupId);
+        if (!group) return;
+
+        this.toolgroupPanelTitle.textContent = group.name;
+        this.renderToolgroupItems(group);
+        this.toolgroupPanel.classList.add('active');
+    }
+
+    // 关闭工具组展开面板
+    closeToolgroupPanel() {
+        this.toolgroupPanel.classList.remove('active');
+    }
+
+    // 渲染工具组内的子项
+    renderToolgroupItems(group) {
+        this.toolgroupItems.innerHTML = '';
+        const layout = this.model.getLayout();
+
+        if (group.items.length === 0) {
+            this.toolgroupItems.innerHTML = '<p style="text-align: center; color: #718096; padding: 2rem;">工具组内暂无项</p>';
+            return;
+        }
+
+        // 使用grid布局展示工具组内的快捷方式
+        this.toolgroupItems.style.display = 'grid';
+        this.toolgroupItems.style.gridTemplateColumns = 'repeat(auto-fill, minmax(120px, 1fr))';
+        this.toolgroupItems.style.gap = `${layout.spacing}px`;
+        this.toolgroupItems.style.justifyItems = 'center';
+        this.toolgroupItems.style.alignItems = 'center';
+
+        group.items.forEach(item => {
+            const navItem = document.createElement('a');
+            navItem.href = item.url;
+            navItem.target = '_blank';
+            navItem.className = 'nav-item';
+            navItem.style.setProperty('--icon-size', `${layout.iconSize}px`);
+
+            navItem.innerHTML = `
+                <div class="nav-item-icon" style="width: ${layout.iconSize}px; height: ${layout.iconSize}px; font-size: ${layout.iconSize * 0.6}px">
+                    ${item.icon || '🔗'}
+                </div>
+                <div class="nav-item-name">${item.name}</div>
+            `;
+
+            this.toolgroupItems.appendChild(navItem);
+        });
+    }
+
+    // 合并两个导航项为一个工作组
+    mergeItemsIntoToolGroup(itemId1, itemId2) {
+        // 获取两个导航项
+        const item1 = this.model.getNavigationItems().find(i => i.id === itemId1);
+        const item2 = this.model.getNavigationItems().find(i => i.id === itemId2);
+
+        if (!item1 || !item2) {
+            this.showToast('找不到导航项', 'error');
+            return;
+        }
+
+        // 创建新工作组
+        const newGroupName = `${item1.name} + ${item2.name}`;
+        const newGroup = this.model.addToolGroup({ name: newGroupName });
+
+        // 添加两个项到工作组
+        this.model.addItemToToolGroup(newGroup.id, {...item1});
+        this.model.addItemToToolGroup(newGroup.id, {...item2});
+
+        // 删除原导航项
+        const deleteResult1 = this.model.deleteNavigationItem(itemId1);
+        const deleteResult2 = this.model.deleteNavigationItem(itemId2);
+
+        // 确保删除成功后再重新渲染
+        if (deleteResult1 && deleteResult2) {
+            // 重新渲染所有相关列表，确保完全刷新界面
+            this.renderNavList();
+            this.renderToolgroupList();
+            this.renderNavigationGrid();
+            this.showToast('已合并为工具组');
+        } else {
+            // 如果删除失败，回滚创建的工具组
+            this.model.deleteToolGroup(newGroup.id);
+            this.showToast('合并失败，请重试', 'error');
+        }
+    }
+
+    // 渲染工具组列表（设置面板中）
+    renderToolgroupList() {
+        this.toolgroupList.innerHTML = '';
+        const toolGroups = this.model.getToolGroups();
+
+        if (toolGroups.length === 0) {
+            this.toolgroupList.innerHTML = '<p style="color: #718096; font-size: 0.9em; text-align: center; padding: 1rem;">暂无工具组</p>';
+            return;
+        }
+
+        toolGroups.forEach(group => {
+            const listItem = document.createElement('div');
+            listItem.className = 'nav-list-item';
+            listItem.innerHTML = `
+                <div class="nav-item-info">
+                    <strong class="nav-item-name">${group.name}</strong>
+                    <div class="nav-item-count">${group.items.length} 项</div>
+                </div>
+                <div class="nav-item-actions">
+                    <button class="btn secondary edit-toolgroup" data-id="${group.id}">编辑</button>
+                    <button class="btn danger delete-toolgroup" data-id="${group.id}">删除</button>
+                </div>
+            `;
+
+            listItem.querySelector('.edit-toolgroup').addEventListener('click', () => {
+                this.openToolgroupEditModal(group.id);
+            });
+
+            listItem.querySelector('.delete-toolgroup').addEventListener('click', () => {
+                // 先弹出确认提示框
+                if (confirm(`确定要删除工具组 "${group.name}" 吗？`)) {
+                    // 仅在用户确认后执行删除操作
+                    this.model.deleteToolGroup(group.id);
+                    // 刷新相关列表
+                    this.renderNavigationGrid();
+                    this.renderToolgroupList();
+                    this.showToast('已删除工具组');
+                }
+            });
+
+            this.toolgroupList.appendChild(listItem);
+        });
+    }
+
+    // 打开工具组选择模态框
+    openToolgroupSelectModal() {
+        this.renderToolgroupSelectList();
+        this.toolgroupSelectModal.classList.add('active');
+    }
+
+    // 渲染工具组选择列表
+    renderToolgroupSelectList() {
+        this.toolgroupSelectList.innerHTML = '';
+        const toolGroups = this.model.getToolGroups();
+
+        if (toolGroups.length === 0) {
+            this.toolgroupSelectList.innerHTML = '<p style="color: #718096; font-size: 0.9em; margin-bottom: 1rem;">暂无工具组</p>';
+            return;
+        }
+
+        toolGroups.forEach(group => {
+            const option = document.createElement('div');
+            option.className = 'form-group';
+            option.innerHTML = `
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <input type="radio" name="toolgroup" value="${group.id}"> ${group.name} (${group.items.length}项)
+                </label>
+            `;
+            this.toolgroupSelectList.appendChild(option);
+        });
+    }
+
+    // 打开工具组编辑模态框
+    openToolgroupEditModal(groupId = null) {
+        this.currentEditItemId = groupId;
+        this.toolgroupEditModal.classList.add('active');
+
+        if (groupId) {
+            const group = this.model.getToolGroups().find(g => g.id === groupId);
+            if (group) {
+                this.toolgroupEditTitle.textContent = '编辑工具组';
+                this.toolgroupNameInput.value = group.name;
+            }
+        } else {
+            this.toolgroupEditTitle.textContent = '创建工具组';
+            this.toolgroupNameInput.value = '';
+        }
+    }
+
+    // 关闭工具组编辑模态框
+    closeToolgroupEditModal() {
+        this.toolgroupEditModal.classList.remove('active');
+        this.currentEditItemId = null;
+        this.toolgroupEditForm.reset();
+    }
+
+    // 搜索相关方法
+    initSearchSettings() {
+        const searchSettings = this.model.getSearchSettings();
+        // 设置默认搜索引擎
+        this.searchEngineSelect.value = searchSettings.engine;
+        // 设置搜索框透明度
+        this.updateSearchOpacity(searchSettings.opacity);
+    }
+
+    handleSearchEngineChange(engine) {
+        this.model.setSearchEngine(engine);
+    }
+
+    handleSearch() {
+        const query = this.searchInput.value.trim();
+        if (!query) return;
+
+        const engine = this.model.getSearchEngine();
+        const searchUrls = {
+            google: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+            baidu: `https://www.baidu.com/s?wd=${encodeURIComponent(query)}`,
+            bing: `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
+            yahoo: `https://search.yahoo.com/search?p=${encodeURIComponent(query)}`
+        };
+
+        window.open(searchUrls[engine], '_blank');
+    }
+
+    updateSearchOpacity(opacity) {
+        // 更新搜索组件背景透明度 - 移除背景色
+        if (this.searchComponent) {
+            this.searchComponent.style.background = 'transparent';
+        }
+        
+        // 更新搜索引擎选择框透明度 - 设置为黑色
+        if (this.searchEngineSelect) {
+            this.searchEngineSelect.style.background = `rgba(0, 0, 0, ${opacity * 0.9})`;
+        }
+        
+        // 更新搜索输入框透明度
+        if (this.searchInput) {
+            this.searchInput.style.background = `rgba(255, 255, 255, ${opacity * 0.9})`;
+        }
+    }
+
+    updateSearchOpacitySetting() {
+        const opacityPercent = parseInt(this.searchOpacitySlider.value);
+        const opacity = 1 - (opacityPercent / 100); // 反转透明度逻辑，使数值越大越透明
+        this.searchOpacityValue.textContent = opacityPercent;
+        this.model.setSearchOpacity(opacity);
+        this.updateSearchOpacity(opacity);
     }
 
     // 工具函数

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>css做的流光登录页</title>
+    <style>
+        *{
+            margin: 0;
+            padding: 0;
+            font-size: 黑体;
+            box-sizing: border-box;
+        }
+        body{
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #1dc9a9;/*设置整个页面的底色*/
+        }
+        .box{
+            /* 登录盒子设置大小和底色 */
+            position: relative;
+            width: 380px;
+            height: 420px;
+            background: #1c1c1c;
+            border-radius: 8px;
+        }
+        /* 2.准备 登录模块样式 */
+        .box form{
+            position: absolute;
+            inset: 4px;
+            background: #222;
+            padding: 50px 40px;
+            border-radius: 8px;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            /* 开启flex布局 换轴 */
+        }
+        /* 标题文字样式 输入框盒子 大小间距 */
+        .box form h2{
+            color: #fff;
+            font-weight: 500;
+            text-align: center;
+            letter-spacing: 0.1em;
+        }
+        .box form .inputBox{
+            position: relative;
+            width: 300px;
+            margin-top: 35px;
+            /*  */
+        }
+        /* 
+        .box form h2：选择.box元素内的form元素中的h2元素。
+        color: #fff;：将文本颜色设置为白色。
+        font-weight: 500;：将字体粗细设置为500（中等粗细）。
+        text-align: center;：将文本居中对齐。
+        letter-spacing: 0.1em;：设置字母间距为0.1em。
+
+        .box form .inputBox：选择.box元素内的form元素中的类名为.inputBox的元素。
+        position: relative;：将元素定位设置为相对定位。
+        width: 300px;：将元素的宽度设置为300像素。
+        margin-top: 35px;：将元素的上外边距设置为35像素。
+        */
+
+        /* 输入框样式调整 */
+        .box form .inputBox input{
+            position: relative;
+            width: 100%;
+            padding: 20px 10px 10px ;
+            background: transparent;
+            outline: none;
+            border: none;
+            box-shadow: none;
+            color: #23242a;
+            font-size: 1em;
+            letter-spacing: 0.05em;
+            z-index: 10;
+        }
+        /* 提示文字样式 */
+        .box form .inputBox span {
+            position: absolute;
+            left: 0;
+            padding: 20px 0px 10px ;
+            pointer-events: none;
+            color: #8f8f8f;
+            font-size: 1em;
+            letter-spacing: 0.05em;
+            /* em 自动适应父元素的字体大小变化。 */
+            /* em 单位是基于父元素的字体大小的倍数。 */
+        }
+
+        /* 输入有效值获取焦点时 样式 */
+        .box form .inputBox input{
+            transition: 0.5s;
+        }
+        .box form .inputBox span {
+            transition: 0.5s;
+        }
+        .box form .inputBox input:valid ~ span,
+        .box form .inputBox input:focus ~ span{
+             color: #fff;
+             font-size: 0.75em;
+             transform: translateY(-34px);
+        }
+
+        /* 设置白色下划线 并设置点击穿透 */
+        .box form .inputBox i{
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            height: 2px;
+            background: #fff;
+            border-radius: 4px;
+            overflow: hidden;
+            transition: 0.5s;
+            pointer-events: none;
+        }
+
+
+        /* 输入有效值 获取焦点时 样式 */
+        .box form .inputBox input:valid ~ i,
+        .box form .inputBox input:focus ~ i{
+             height: 44px;
+        }
+
+        /* 开启flex a链接 样式 */
+        .box form .links{
+            display: flex;
+            justify-content: space-between;
+        }
+        .box form .links a{
+            margin: 10px 0;
+            font-size: 0.75em;
+            color: #8f8f8f;
+            text-decoration: none;
+        }
+
+        /* a链接hover时改颜色 注册直接改颜色 */
+        .box form .links a:hover ,
+        .box form .links a:nth-child(2){
+            color: #fff;
+        }
+
+        /* 修改登录按钮样式 */
+        .box form input[type="submit"]{
+            border: none;
+            outline: none;
+            padding: 9px 25px;
+            background: #fff;
+            cursor: pointer;
+            font-size: 0.9em;
+            border-radius: 4px;
+            font-weight: 600;
+            width: 100px;
+            margin-top: 10px;
+        }
+
+        /* 登录按钮点击时 透明度80% */
+        .box form input[type="submit"]:active{
+            opacity: 0.8;
+        }
+
+
+        /* 3.添加流光动画 */
+        /* 写动画 */
+        .borderLine{
+            position: absolute;
+            top: 0;
+            inset: 0;
+        }
+        @keyframes animate{
+            0%{
+                transform: rotate(0deg);
+            }
+            100%{
+                transform: rotate(350deg);
+            }
+        }
+        /* 添加动画 */
+        .box::before,
+        .box::after,
+        .borderLine::before,
+        .borderLine::after{
+            content: "";
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 380px;
+            height: 420px;
+            background: linear-gradient(
+                0deg,transparent,transparent,
+                #45f3ff,#45f3ff,#45f3ff
+            );
+            z-index: 1;
+            transform-origin: bottom right;
+            animation: animate 6s linear infinite;
+        }
+
+        /* 添加动画延迟 */
+        /* 修改两个颜色 */
+        .box::after{
+            animation-delay: -3s;
+        }
+        .borderLine::before{
+            background:linear-gradient(
+                0deg,transparent,transparent,
+                #ff2770,#ff2770,#ff2770
+            );
+            animation-delay: -1.5s;
+        }
+        .borderLine::after{
+            background:linear-gradient(
+                0deg,transparent,transparent,
+                #ff2770,#ff2770,#ff2770
+            );
+            animation-delay: -4.5s;
+        }
+
+        
+        /* 超出隐藏 */
+        .box{
+            overflow: hidden;
+        }
+
+
+    </style>
+</head>
+<body>
+    <!-- 1.准备登录结构和基本样式 -->
+    <div class="box">
+        <span class="borderLine"></span>
+        <form action="">
+            <h2>Sign in</h2>
+            <div class="inputBox">
+                <input type="text" required>
+                <span>Username</span><i></i>
+            </div>
+            <div class="inputBox">
+                <input type="password" required>
+                <span>Password</span><i></i>
+            </div>
+            <div class="links">
+                <a href="#">Forget Password</a><!--找回密码-->>
+                <a href="#">Signup</a><!--注册-->>
+            </div>
+            <div class="links">
+                <input type="submit" value="Login">
+                <input type="submit" value="Signup">
+            </div>
+
+        </form>
+    </div>
+
+
+</body>
+</html>
+
+
+<!-- 
+代码编写思路：
+    1.准备 登录结构和基本样式
+    2.准备 登录模块 样式
+    3.添加流光动画
+
+本质揭秘：
+    1.伪元素完成流光效果（渐变）
+    2.添加动画（控制动画时长达到不同步效果）
+    3.获取焦点和写有效内容（伪类选择器）时白色遮罩的样式（兄弟选择器）
+
+
+ -->

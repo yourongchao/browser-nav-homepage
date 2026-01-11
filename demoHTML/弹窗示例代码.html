@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简约护眼图标弹窗</title>
+    <!-- 引入Font Awesome图标库，提供美观图标 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css">
+    <style>
+        /* 全局样式重置，保证跨浏览器一致性 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* 页面基础样式，护眼配色为主 */
+        body {
+            min-height: 100vh;
+            /* 弹性布局实现按钮垂直水平居中 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* 护眼浅绿背景，低饱和度不刺眼 */
+            background-color: #f0f7f4;
+            font-family: "Microsoft YaHei", Arial, sans-serif;
+            color: #333;
+        }
+
+        /* 居中按钮样式 */
+        .open-modal-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            /* 护眼主色调绿色 */
+            background-color: #4a9d7c;
+            color: #ffffff;
+            font-size: 16px;
+            cursor: pointer;
+            /* 过渡动画，提升交互体验 */
+            transition: background-color 0.3s ease;
+        }
+
+        .open-modal-btn:hover {
+            /* 鼠标悬浮加深背景色，保持护眼风格 */
+            background-color: #3a8c6c;
+        }
+
+        /* 弹窗遮罩层（50%透明度） */
+        .modal-overlay {
+            /* 固定定位，覆盖整个视口 */
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            /* 50%透明度护眼深绿遮罩，不影响内容可读性 */
+            background-color: rgba(20, 40, 30, 0.5);
+            /* 弹性布局实现弹窗内容居中 */
+            display: none;
+            justify-content: center;
+            align-items: center;
+            /* 提高层级，确保在页面最上层 */
+            z-index: 999;
+        }
+
+        /* 弹窗内容容器 */
+        .modal-content {
+            position: relative;
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 40px 20px 20px;
+            /* 轻微阴影，提升层次感，不刺眼 */
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            /* 响应式宽度，适配移动端 */
+            width: 90%;
+            max-width: 500px;
+        }
+
+        /* 弹窗关闭按钮 */
+        .close-modal-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: #666;
+            cursor: pointer;
+            transition: color 0.3s ease;
+        }
+
+        .close-modal-btn:hover {
+            color: #4a9d7c;
+        }
+
+        /* Grid布局：图标列表容器 */
+        .icon-grid {
+            display: grid;
+            /* 自动适配列数，最小列宽100px，最大等分 */
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            /* 网格间距，保证美观 */
+            gap: 25px;
+            /* 对齐方式 */
+            justify-items: center;
+            align-items: center;
+        }
+
+        /* 单个图标项样式 */
+        .icon-item {
+            /* 弹性布局，图标与文字垂直排列居中 */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* 图标样式 */
+        .icon-item .fa {
+            font-size: 32px;
+            color: #4a9d7c;
+            transition: transform 0.3s ease;
+        }
+
+        .icon-item:hover .fa {
+            /* 鼠标悬浮轻微放大，提升交互感 */
+            transform: scale(1.1);
+        }
+
+        /* 图标名称样式 */
+        .icon-name {
+            font-size: 14px;
+            color: #555;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <!-- 页面居中按钮 -->
+    <button class="open-modal-btn" id="openModalBtn">
+        打开图标弹窗
+    </button>
+
+    <!-- 弹窗遮罩层 -->
+    <div class="modal-overlay" id="modalOverlay">
+        <!-- 弹窗内容 -->
+        <div class="modal-content">
+            <!-- 关闭按钮 -->
+            <button class="close-modal-btn" id="closeModalBtn">
+                <i class="fa fa-times"></i>
+            </button>
+            <!-- Grid布局图标列表 -->
+            <div class="icon-grid">
+                <div class="icon-item">
+                    <i class="fa fa-home"></i>
+                    <span class="icon-name">首页</span>
+                </div>
+                <div class="icon-item">
+                    <i class="fa fa-envelope"></i>
+                    <span class="icon-name">消息</span>
+                </div>
+                <div class="icon-item">
+                    <i class="fa fa-star"></i>
+                    <span class="icon-name">收藏</span>
+                </div>
+                <div class="icon-item">
+                    <i class="fa fa-cog"></i>
+                    <span class="icon-name">设置</span>
+                </div>
+                <div class="icon-item">
+                    <i class="fa fa-user"></i>
+                    <span class="icon-name">个人中心</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 1. 获取DOM元素（语义化命名，提高可读性）
+        const openModalBtn = document.getElementById('openModalBtn');
+        const modalOverlay = document.getElementById('modalOverlay');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+
+        // 2. 打开弹窗函数
+        function openModal() {
+            modalOverlay.style.display = 'flex';
+        }
+
+        // 3. 关闭弹窗函数
+        function closeModal() {
+            modalOverlay.style.display = 'none';
+        }
+
+        // 4. 绑定点击事件
+        // 打开弹窗：点击居中按钮
+        openModalBtn.addEventListener('click', openModal);
+
+        // 关闭弹窗：点击关闭按钮
+        closeModalBtn.addEventListener('click', closeModal);
+
+        // 关闭弹窗：点击遮罩层空白区域
+        modalOverlay.addEventListener('click', function(e) {
+            // 仅当点击遮罩层本身时关闭，避免点击弹窗内容误关闭
+            if (e.target === modalOverlay) {
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>
