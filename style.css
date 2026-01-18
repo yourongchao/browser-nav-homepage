@@ -388,11 +388,11 @@ body {
     position: relative;
     background-color: #ffffff;
     border-radius: 12px;
-    padding: 40px 20px 20px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    padding: 50px 20px 20px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
     width: 90%;
-    max-width: 500px;
-    max-height: 90vh;
+    max-width: 700px;
+    max-height: 80vh;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -402,30 +402,32 @@ body {
     position: absolute;
     top: 15px;
     left: 20px;
-    right: 20px;
+    right: 50px;
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
     background: transparent;
     border-bottom: none;
     padding: 0;
+    z-index: 10;
 }
 
 .toolgroup-panel-header h3 {
     margin: 0;
     color: #2d3748;
     font-size: 1.25rem;
+    font-weight: 600;
 }
 
 .toolgroup-items {
-    padding: 1.5rem;
+    padding: 1rem;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-    gap: 25px;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 15px;
     justify-items: center;
     align-items: center;
     overflow-y: auto;
-    max-height: calc(90vh - 80px);
+    max-height: 300px;
 }
 
 /* 暗色模式下的工具组样式 */
@@ -580,6 +582,88 @@ body {
     margin-bottom: 0.5rem;
     font-weight: 500;
     color: #4a5568;
+}
+
+/* 颜色选择器样式 */
+.color-picker-container {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    max-width: 250px;
+}
+
+.color-picker {
+    width: 60px;
+    height: 40px;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    padding: 0;
+    background: transparent;
+}
+
+.color-picker:hover {
+    border-color: #cbd5e0;
+    transform: translateY(-1px);
+}
+
+.color-picker:focus {
+    outline: 2px solid #4f46e5;
+    outline-offset: 2px;
+}
+
+.color-hex-input {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #4a5568;
+    transition: all 0.3s ease;
+    min-width: 0;
+}
+
+.color-hex-input:hover {
+    border-color: #cbd5e0;
+    transform: translateY(-1px);
+}
+
+.color-hex-input:focus {
+    border-color: #4f46e5;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+    transform: translateY(-1px);
+}
+
+/* 颜色预览样式 */
+.color-preview-container {
+    margin-top: 1rem;
+}
+
+.color-preview {
+    padding: 0.5rem 1.5rem;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.8);
+    text-align: center;
+    transition: all 0.3s ease;
+    min-height: auto;
+}
+
+.color-preview:hover {
+    border-color: #4f46e5;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.preview-text {
+    font-size: 1.1rem;
+    font-weight: 500;
+    transition: color 0.3s ease;
+    line-height: 1.5;
 }
 
 .file-input {
@@ -960,7 +1044,7 @@ body {
     outline: none;
     border: none;
     box-shadow: none;
-    color: #23242a;
+    color: red;
     font-size: 1.1em;
     letter-spacing: 0.05em;
     border-bottom: 2px solid #e2e8f0;
@@ -1026,6 +1110,11 @@ body {
     cursor: pointer;
     transition: all 0.3s ease;
     margin-bottom: 1rem;
+    height: auto;
+    max-width: none;
+    flex: none;
+    position: relative;
+    z-index: 1;
 }
 
 .modal-body .form-group .custom-file-upload:hover {
@@ -1248,6 +1337,39 @@ body {
     .btn.secondary {
         background: #4a5568;
         color: #e2e8f0;
+    }
+
+    /* 暗色模式下的颜色选择器样式 */
+    .color-picker {
+        border-color: #4a5568;
+    }
+
+    .color-picker:hover {
+        border-color: #718096;
+    }
+
+    .color-hex-input {
+        background: #4a5568;
+        color: #e2e8f0;
+        border-color: #4a5568;
+    }
+
+    .color-hex-input:hover {
+        border-color: #718096;
+    }
+
+    .color-hex-input:focus {
+        border-color: #667eea;
+    }
+
+    .color-preview {
+        background: rgba(45, 55, 72, 0.8);
+        border-color: #4a5568;
+    }
+
+    .color-preview:hover {
+        background: rgba(45, 55, 72, 0.9);
+        border-color: #667eea;
     }
 
     .modal-content {

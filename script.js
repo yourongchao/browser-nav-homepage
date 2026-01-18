@@ -19,6 +19,260 @@
  * 3. DOMContentLoaded事件：应用初始化
  */
 
+// 存储适配器基类
+class StorageAdapter {
+    constructor(model) {
+        this.model = model;
+    }
+    
+    // 抽象方法，子类必须实现
+    async openStorage() {}
+    async saveStorage() {}
+    async backupStorage() {}
+    async restoreStorage() {}
+}
+
+// FileSystemAccess API适配器（Chrome/Edge/Opera）
+class FileSystemAccessAdapter extends StorageAdapter {
+    async openStorage() {
+        try {
+            const opened = await this.model.openStorageFile();
+            return opened;
+        } catch (err) {
+            console.error('FileSystemAccessAdapter: 打开存储失败', err);
+            return false;
+        }
+    }
+    
+    async saveStorage() {
+        try {
+            const saved = await this.model.saveToFile();
+            return saved;
+        } catch (err) {
+            console.error('FileSystemAccessAdapter: 保存存储失败', err);
+            return false;
+        }
+    }
+    
+    async backupStorage() {
+        try {
+            const backedUp = await this.model.backupFile();
+            return backedUp;
+        } catch (err) {
+            console.error('FileSystemAccessAdapter: 备份存储失败', err);
+            return false;
+        }
+    }
+    
+    async restoreStorage() {
+        try {
+            const restored = await this.model.restoreFromBackup();
+            return restored;
+        } catch (err) {
+            console.error('FileSystemAccessAdapter: 恢复存储失败', err);
+            return false;
+        }
+    }
+}
+
+// Firefox存储适配器
+class FirefoxStorageAdapter extends StorageAdapter {
+    constructor(model) {
+        super(model);
+        this.fileInput = null;
+        this.downloadLink = null;
+    }
+    
+    // 初始化DOM元素
+    initElements() {
+        if (!this.fileInput) {
+            this.fileInput = document.createElement('input');
+            this.fileInput.type = 'file';
+            this.fileInput.accept = '.json';
+            this.fileInput.style.display = 'none';
+            document.body.appendChild(this.fileInput);
+        }
+        
+        if (!this.downloadLink) {
+            this.downloadLink = document.createElement('a');
+            this.downloadLink.style.display = 'none';
+            document.body.appendChild(this.downloadLink);
+        }
+    }
+    
+    // 打开存储文件
+    async openStorage() {
+        this.initElements();
+        
+        return new Promise((resolve) => {
+            this.fileInput.onchange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            const data = JSON.parse(event.target.result);
+                            this.model.currentSettings = data;
+                            this.model.ensureSettingsStructure();
+                            this.model.saveSettings(); // 同时保存到localStorage
+                            resolve(true);
+                        } catch (err) {
+                            console.error('读取文件失败:', err);
+                            resolve(false);
+                        }
+                    };
+                    reader.readAsText(file);
+                } else {
+                    resolve(false);
+                }
+            };
+            
+            this.fileInput.click();
+        });
+    }
+    
+    // 保存存储文件
+    async saveStorage() {
+        this.initElements();
+        
+        try {
+            // 更新时间戳和校验和
+            this.model.currentSettings.timestamp = Date.now();
+            this.model.currentSettings.checksum = this.model.generateChecksum(this.model.currentSettings);
+            
+            const dataStr = JSON.stringify(this.model.currentSettings, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            
+            // 使用<a download>方式下载文件
+            const url = URL.createObjectURL(dataBlob);
+            this.downloadLink.href = url;
+            this.downloadLink.download = this.model.storageFileName;
+            this.downloadLink.click();
+            
+            // 清理URL对象
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+            }, 100);
+            
+            return true;
+        } catch (err) {
+            console.error('保存文件失败:', err);
+            return false;
+        }
+    }
+    
+    // 备份存储文件
+    async backupStorage() {
+        this.initElements();
+        
+        try {
+            // 更新时间戳和校验和
+            this.model.currentSettings.timestamp = Date.now();
+            this.model.currentSettings.checksum = this.model.generateChecksum(this.model.currentSettings);
+            
+            const dataStr = JSON.stringify(this.model.currentSettings, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            
+            // 使用<a download>方式下载备份文件
+            const url = URL.createObjectURL(dataBlob);
+            this.downloadLink.href = url;
+            this.downloadLink.download = this.model.backupFileName;
+            this.downloadLink.click();
+            
+            // 清理URL对象
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+            }, 100);
+            
+            return true;
+        } catch (err) {
+            console.error('备份文件失败:', err);
+            return false;
+        }
+    }
+    
+    // 恢复存储文件
+    async restoreStorage() {
+        return this.openStorage();
+    }
+}
+
+// LocalStorage适配器（作为后备方案）
+class LocalStorageAdapter extends StorageAdapter {
+    async openStorage() {
+        // 对于LocalStorage，直接使用loadSettings
+        this.model.currentSettings = this.model.loadSettings();
+        return true;
+    }
+    
+    async saveStorage() {
+        // 对于LocalStorage，直接使用saveSettings
+        return this.model.saveSettings();
+    }
+    
+    async backupStorage() {
+        // 对于LocalStorage，直接使用exportSettings
+        const dataStr = JSON.stringify(this.model.currentSettings, null, 2);
+        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(dataBlob);
+        
+        // 创建临时下载链接
+        const downloadLink = document.createElement('a');
+        downloadLink.href = url;
+        downloadLink.download = this.model.backupFileName;
+        downloadLink.click();
+        
+        setTimeout(() => {
+            URL.revokeObjectURL(url);
+        }, 100);
+        
+        return true;
+    }
+    
+    async restoreStorage() {
+        // 对于LocalStorage，需要用户选择文件
+        return new Promise((resolve) => {
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = '.json';
+            fileInput.style.display = 'none';
+            document.body.appendChild(fileInput);
+            
+            fileInput.onchange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            const data = JSON.parse(event.target.result);
+                            if (this.model.validateSettings(data)) {
+                                this.model.currentSettings = data;
+                                this.model.ensureSettingsStructure();
+                                this.model.saveSettings();
+                                resolve(true);
+                            } else {
+                                resolve(false);
+                            }
+                        } catch (err) {
+                            console.error('恢复存储失败:', err);
+                            resolve(false);
+                        }
+                        
+                        // 清理DOM元素
+                        document.body.removeChild(fileInput);
+                    };
+                    reader.readAsText(file);
+                } else {
+                    document.body.removeChild(fileInput);
+                    resolve(false);
+                }
+            };
+            
+            fileInput.click();
+        });
+    }
+}
+
 // 数据模型类：负责所有数据的存储、加载和操作
 class NavigationModel {
     constructor() {
@@ -59,7 +313,8 @@ class NavigationModel {
             search: {
                 engine: 'google',
                 opacity: 0.2 // 对应80%透明度，因为1 - 0.2 = 0.8
-            }
+            },
+            textColor: '#2d3748' // 默认文字颜色
         };
         
         // 初始化数据
@@ -68,10 +323,8 @@ class NavigationModel {
         // 确保必要属性存在
         this.ensureSettingsStructure();
         
-        // 初始化文件存储（异步）
-        this.initFileStorage().catch(err => {
-            console.log('文件存储初始化失败，使用localStorage', err);
-        });
+        // 移除自动文件存储初始化，改为由用户交互触发
+        // 文件存储将在用户明确启用或选择文件时初始化
     }
 
     loadSettings() {
@@ -109,9 +362,9 @@ class NavigationModel {
             // 先保存到localStorage（同步，确保数据安全）
             localStorage.setItem(this.storageKey, JSON.stringify(this.currentSettings));
             
-            // 再异步保存到文件（如果启用了文件存储）
-            if (this.isFileStorageEnabled) {
-                this.saveToFile().catch(err => {
+            // 再异步保存到文件（如果启用了文件存储且已初始化存储适配器）
+            if (this.isFileStorageEnabled && this.storageAdapter) {
+                this.storageAdapter.saveStorage().catch(err => {
                     console.error('保存到文件失败，但已保存到localStorage:', err);
                 });
             }
@@ -233,6 +486,10 @@ class NavigationModel {
             this.currentSettings.search = this.defaultSettings.search;
         }
         
+        if (!this.currentSettings.textColor) {
+            this.currentSettings.textColor = this.defaultSettings.textColor;
+        }
+        
         this.saveSettings();
     }
     
@@ -263,36 +520,46 @@ class NavigationModel {
     
     // 检查浏览器是否支持文件系统访问API
     isFileSystemAPISupported() {
-        return 'showSaveFilePicker' in window && 'showOpenFilePicker' in window;
+        const hasSavePicker = 'showSaveFilePicker' in window;
+        const hasOpenPicker = 'showOpenFilePicker' in window;
+        
+        if (!hasSavePicker || !hasOpenPicker) {
+            console.log('浏览器不支持File System Access API:', {
+                hasSavePicker,
+                hasOpenPicker,
+                browser: navigator.userAgent
+            });
+        }
+        
+        return hasSavePicker && hasOpenPicker;
+    }
+
+    // 浏览器检测方法
+    isFirefox() {
+        return navigator.userAgent.toLowerCase().includes('firefox');
+    }
+
+    isTreaBrowser() {
+        return navigator.userAgent.toLowerCase().includes('trea');
+    }
+
+    // 存储适配器工厂方法
+    createStorageAdapter() {
+        if (this.isFileSystemAPISupported()) {
+            return new FileSystemAccessAdapter(this);
+        } else if (this.isFirefox() || this.isTreaBrowser()) {
+            return new FirefoxStorageAdapter(this);
+        } else {
+            return new LocalStorageAdapter(this);
+        }
     }
     
     // 初始化文件存储
     async initFileStorage() {
-        if (!this.isFileSystemAPISupported()) {
-            console.log('浏览器不支持File System Access API');
-            return false;
-        }
-        
-        try {
-            // 尝试打开现有文件
-            const opened = await this.openStorageFile();
-            if (opened) {
-                this.isFileStorageEnabled = true;
-                return true;
-            }
-            
-            // 如果没有现有文件，尝试创建新文件
-            const created = await this.createStorageFile();
-            if (created) {
-                this.isFileStorageEnabled = true;
-                return true;
-            }
-            
-            return false;
-        } catch (err) {
-            console.error('文件存储初始化失败:', err);
-            return false;
-        }
+        // 为所有浏览器创建存储适配器
+        this.storageAdapter = this.createStorageAdapter();
+        this.isFileStorageEnabled = true;
+        return true;
     }
     
     // 创建新的存储文件
@@ -724,6 +991,15 @@ class NavigationModel {
         this.currentSettings.search.opacity = opacity;
         this.saveSettings();
     }
+
+    getTextColor() {
+        return this.currentSettings.textColor;
+    }
+
+    setTextColor(color) {
+        this.currentSettings.textColor = color;
+        this.saveSettings();
+    }
 }
 
 // 主应用类：负责UI渲染、事件处理和用户交互
@@ -744,7 +1020,47 @@ class NavigationApp {
         this.renderNavList();
         this.renderToolgroupList();
         this.initSearchSettings();
+        this.initTextColorSettings();
         this.hideAllMenus();
+    }
+
+    // 初始化文字颜色设置
+    initTextColorSettings() {
+        const textColor = this.model.getTextColor();
+        this.textColorPicker.value = textColor;
+        this.textColorHexInput.value = textColor;
+        this.updateColorPreview(textColor);
+    }
+
+    // 更新文字颜色
+    updateTextColor(color) {
+        this.model.setTextColor(color);
+        this.textColorHexInput.value = color;
+        this.updateColorPreview(color);
+        this.renderNavigationGrid();
+    }
+
+    // 从十六进制输入更新文字颜色
+    updateTextColorFromHex(hexValue) {
+        // 验证十六进制颜色格式
+        const hexRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
+        if (hexRegex.test(hexValue)) {
+            this.model.setTextColor(hexValue);
+            this.textColorPicker.value = hexValue;
+            this.updateColorPreview(hexValue);
+            this.renderNavigationGrid();
+        }
+    }
+
+    // 恢复默认文字颜色
+    resetTextColor() {
+        const defaultColor = this.model.defaultSettings.textColor;
+        this.updateTextColor(defaultColor);
+    }
+
+    // 更新颜色预览
+    updateColorPreview(color) {
+        this.colorPreview.style.color = color;
     }
 
     cacheElements() {
@@ -779,6 +1095,12 @@ class NavigationApp {
         this.toolgroupEditTitle = document.getElementById('toolgroup-edit-title');
         this.toolgroupEditForm = document.getElementById('toolgroup-edit-form');
         this.toolgroupNameInput = document.getElementById('toolgroup-name');
+        
+        // 确认删除模态框
+        this.confirmDeleteModal = document.getElementById('confirm-delete-modal');
+        this.confirmDeleteMessage = document.getElementById('confirm-delete-message');
+        this.confirmDeleteOk = document.getElementById('confirm-delete-ok');
+        this.confirmDeleteCancel = document.getElementById('confirm-delete-cancel');
 
         // 设置面板元素
         this.wallpaperUpload = document.getElementById('wallpaper-upload');
@@ -807,6 +1129,12 @@ class NavigationApp {
         this.manualBackupBtn = document.getElementById('manual-backup');
         this.restoreBackupBtn = document.getElementById('restore-backup');
 
+        // 外观设置相关元素
+        this.textColorPicker = document.getElementById('text-color');
+        this.textColorHexInput = document.getElementById('text-color-hex');
+        this.colorPreview = document.getElementById('color-preview');
+        this.resetTextColorBtn = document.getElementById('reset-text-color');
+
         // 编辑模态框
         this.editModal = document.getElementById('edit-modal');
         this.editForm = document.getElementById('edit-form');
@@ -814,6 +1142,16 @@ class NavigationApp {
         this.editUrl = document.getElementById('edit-url');
         this.editIcon = document.getElementById('edit-icon');
         this.iconPreview = document.getElementById('icon-preview');
+        this.saveAndContinueBtn = document.getElementById('save-and-continue');
+        
+        // 编辑现有导航项模态框
+        this.editExistingModal = document.getElementById('edit-existing-modal');
+        this.editExistingForm = document.getElementById('edit-existing-form');
+        this.editExistingName = document.getElementById('edit-existing-name');
+        this.editExistingUrl = document.getElementById('edit-existing-url');
+        this.editExistingIcon = document.getElementById('edit-existing-icon');
+        this.iconExistingPreview = document.getElementById('icon-existing-preview');
+        
         this.closeModalBtns = document.querySelectorAll('.close-modal');
 
         // 消息提示
@@ -853,6 +1191,11 @@ class NavigationApp {
         this.manualBackupBtn.addEventListener('click', () => this.performManualBackup());
         this.restoreBackupBtn.addEventListener('click', () => this.restoreFromManualBackup());
 
+        // 外观设置事件
+        this.textColorPicker.addEventListener('input', (e) => this.updateTextColor(e.target.value));
+        this.textColorHexInput.addEventListener('input', (e) => this.updateTextColorFromHex(e.target.value));
+        this.resetTextColorBtn.addEventListener('click', () => this.resetTextColor());
+
         // 导航管理
         this.addNavItemBtn.addEventListener('click', () => this.openEditModal());
         this.addNavBtn.addEventListener('click', () => this.openEditModal());
@@ -860,11 +1203,20 @@ class NavigationApp {
         // 编辑模态框
         this.editForm.addEventListener('submit', (e) => this.handleEditSubmit(e));
         this.editIcon.addEventListener('change', (e) => this.previewIcon(e));
+        this.saveAndContinueBtn.addEventListener('click', () => this.handleSaveAndContinue());
+        
+        // 编辑现有导航项模态框事件绑定
+        this.editExistingForm.addEventListener('submit', (e) => this.handleEditExistingSubmit(e));
+        this.editExistingIcon.addEventListener('change', (e) => this.previewExistingIcon(e));
+        
         this.closeModalBtns.forEach(btn => {
             btn.addEventListener('click', () => {
                 this.closeEditModal();
+                this.closeEditExistingModal();
                 this.closeToolgroupEditModal();
                 this.toolgroupSelectModal.classList.remove('active');
+                this.confirmDeleteModal.classList.remove('active');
+                this.confirmDeleteCallback = null;
             });
         });
 
@@ -989,14 +1341,21 @@ class NavigationApp {
             }
         });
 
+        // 确认删除模态框事件
+        this.confirmDeleteOk.addEventListener('click', () => {
+            this.confirmDeleteAction();
+        });
+        
         // 键盘事件
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 this.hideAllMenus();
                 this.closeEditModal();
+                this.closeEditExistingModal();
                 this.closeToolgroupEditModal();
                 this.closeSettingsPanel();
                 this.toolgroupSelectModal.classList.remove('active');
+                this.confirmDeleteModal.classList.remove('active');
             }
         });
     }
@@ -1044,6 +1403,7 @@ class NavigationApp {
         navItem.dataset.id = item.id;
         navItem.dataset.type = 'nav-item';
         navItem.style.setProperty('--icon-size', `${layout.iconSize}px`);
+        navItem.style.color = this.model.getTextColor();
         navItem.draggable = true;
 
         navItem.innerHTML = `
@@ -1132,6 +1492,7 @@ class NavigationApp {
         groupItem.dataset.id = group.id;
         groupItem.dataset.type = 'toolgroup';
         groupItem.style.setProperty('--icon-size', `${layout.iconSize}px`);
+        groupItem.style.color = this.model.getTextColor();
         groupItem.draggable = true;
 
         // 生成工具组缩略图（显示前4个图标）
@@ -1517,15 +1878,16 @@ class NavigationApp {
                 </div>
             `;
 
-            listItem.querySelector('.edit-item').addEventListener('click', () => this.openEditModal(item.id));
+            listItem.querySelector('.edit-item').addEventListener('click', () => this.openEditExistingModal(item.id));
 
             listItem.querySelector('.delete-item').addEventListener('click', () => {
-                if (confirm(`确定要删除 "${item.name}" 吗？`)) {
+                // 打开自定义确认删除模态框
+                this.openConfirmDeleteModal(`确定要删除 "${item.name}" 吗？`, () => {
                     this.model.deleteNavigationItem(item.id);
                     this.renderNavigationGrid();
                     this.renderNavList();
                     this.showToast('已删除导航项');
-                }
+                });
             });
 
             this.navList.appendChild(listItem);
@@ -1569,7 +1931,7 @@ class NavigationApp {
         switch (action) {
             case 'edit':
                 if (this.currentEditItemId) {
-                    this.openEditModal(this.currentEditItemId);
+                    this.openEditExistingModal(this.currentEditItemId);
                 }
                 break;
             case 'delete':
@@ -1621,11 +1983,14 @@ class NavigationApp {
             case 'delete-toolgroup':
                 if (this.currentEditItemId) {
                     const group = this.model.getToolGroups().find(g => g.id === this.currentEditItemId);
-                    if (group && confirm(`确定要删除工具组 "${group.name}" 吗？`)) {
-                        this.model.deleteToolGroup(this.currentEditItemId);
-                        this.renderNavigationGrid();
-                        this.renderToolgroupList();
-                        this.showToast('已删除工具组');
+                    if (group) {
+                        // 打开自定义确认删除模态框
+                        this.openConfirmDeleteModal(`确定要删除工具组 "${group.name}" 吗？`, () => {
+                            this.model.deleteToolGroup(this.currentEditItemId);
+                            this.renderNavigationGrid();
+                            this.renderToolgroupList();
+                            this.showToast('已删除工具组');
+                        });
                     }
                 }
                 break;
@@ -1718,6 +2083,113 @@ class NavigationApp {
         this.closeEditModal();
     }
 
+    handleSaveAndContinue() {
+        const name = this.editName.value.trim();
+        const url = this.editUrl.value.trim();
+
+        if (!name || !url) {
+            this.showToast('请填写名称和网址', 'error');
+            return;
+        }
+
+        // 验证URL格式
+        try {
+            new URL(url);
+        } catch {
+            this.showToast('请输入有效的网址', 'error');
+            return;
+        }
+
+        const itemData = { name, url };
+
+        if (this.currentEditItemId) {
+            this.model.updateNavigationItem(this.currentEditItemId, itemData);
+            this.showToast('导航项已更新');
+        } else {
+            this.model.addNavigationItem(itemData);
+            this.showToast('导航项已添加');
+        }
+
+        this.renderNavigationGrid();
+        this.renderNavList();
+
+        this.editName.value = '';
+        this.editUrl.value = '';
+        this.iconPreview.style.backgroundImage = '';
+        this.iconPreview.textContent = '';
+        this.editIcon.value = '';
+
+        this.currentEditItemId = null;
+    }
+
+    // 编辑现有导航项模态框方法
+    openEditExistingModal(itemId) {
+        this.currentEditItemId = itemId;
+        this.editExistingModal.classList.add('active');
+
+        const item = this.model.getNavigationItems().find(i => i.id === itemId);
+        if (item) {
+            this.editExistingName.value = item.name;
+            this.editExistingUrl.value = item.url;
+            this.iconExistingPreview.style.backgroundImage = '';
+            this.iconExistingPreview.textContent = item.icon || '';
+        }
+    }
+
+    closeEditExistingModal() {
+        this.editExistingModal.classList.remove('active');
+        this.currentEditItemId = null;
+        this.editExistingForm.reset();
+    }
+
+    handleEditExistingSubmit(event) {
+        event.preventDefault();
+
+        const name = this.editExistingName.value.trim();
+        const url = this.editExistingUrl.value.trim();
+
+        if (!name || !url) {
+            this.showToast('请填写名称和网址', 'error');
+            return;
+        }
+
+        // 验证URL格式
+        try {
+            new URL(url);
+        } catch {
+            this.showToast('请输入有效的网址', 'error');
+            return;
+        }
+
+        const itemData = { name, url };
+
+        if (this.currentEditItemId) {
+            this.model.updateNavigationItem(this.currentEditItemId, itemData);
+            this.showToast('导航项已更新');
+        }
+
+        this.renderNavigationGrid();
+        this.renderNavList();
+        this.closeEditExistingModal();
+    }
+
+    previewExistingIcon(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            this.showToast('请选择图片文件', 'error');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            this.iconExistingPreview.style.backgroundImage = `url(${e.target.result})`;
+            this.iconExistingPreview.textContent = '';
+        };
+        reader.readAsDataURL(file);
+    }
+
     previewIcon(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -1804,22 +2276,37 @@ class NavigationApp {
     // 文件存储控制方法
     toggleFileStorage(enabled) {
         if (enabled) {
-            if (this.model.isFileSystemAPISupported()) {
+            if (this.model.isFirefox() || this.model.isTreaBrowser()) {
+                // 对于Firefox和trea浏览器，直接启用，使用兼容模式
+                this.model.initFileStorage().then(success => {
+                    if (success) {
+                        this.model.isFileStorageEnabled = true;
+                        this.showToast('文件存储已启用（使用浏览器兼容模式）');
+                    } else {
+                        this.enableFileStorageCheckbox.checked = false;
+                        this.showToast('文件存储初始化失败，请重试', 'error');
+                    }
+                }).catch(err => {
+                    this.enableFileStorageCheckbox.checked = false;
+                    this.showToast('文件存储初始化失败：' + err.message, 'error');
+                });
+            } else if (this.model.isFileSystemAPISupported()) {
+                // 原有逻辑，适用于Chrome/Edge/Opera
                 this.model.initFileStorage().then(success => {
                     if (success) {
                         this.model.isFileStorageEnabled = true;
                         this.showToast('文件存储已启用');
                     } else {
                         this.enableFileStorageCheckbox.checked = false;
-                        this.showToast('文件存储初始化失败', 'error');
+                        this.showToast('文件存储初始化失败，请重试', 'error');
                     }
                 }).catch(err => {
                     this.enableFileStorageCheckbox.checked = false;
-                    this.showToast('文件存储初始化失败', 'error');
+                    this.showToast('文件存储初始化失败：' + err.message, 'error');
                 });
             } else {
                 this.enableFileStorageCheckbox.checked = false;
-                this.showToast('您的浏览器不支持文件系统访问API', 'error');
+                this.showToast('您的浏览器不支持文件系统访问API。目前仅Chrome、Edge和Opera浏览器支持此功能。', 'error');
             }
         } else {
             this.model.isFileStorageEnabled = false;
@@ -1828,7 +2315,26 @@ class NavigationApp {
     }
     
     selectStorageFile() {
-        if (this.model.isFileSystemAPISupported()) {
+        if (this.model.isFileStorageEnabled || this.model.isFirefox() || this.model.isTreaBrowser()) {
+            // 对于已启用文件存储或Firefox/trea浏览器，使用适配器打开存储
+            if (!this.model.storageAdapter) {
+                this.model.initFileStorage();
+            }
+            
+            this.model.storageAdapter.openStorage().then(success => {
+                if (success) {
+                    this.model.isFileStorageEnabled = true;
+                    this.enableFileStorageCheckbox.checked = true;
+                    this.showToast('已选择存储文件');
+                    this.refreshAllData();
+                } else {
+                    this.showToast('选择存储文件失败', 'error');
+                }
+            }).catch(err => {
+                this.showToast('选择存储文件失败：' + err.message, 'error');
+            });
+        } else if (this.model.isFileSystemAPISupported()) {
+            // 原有逻辑，适用于Chrome/Edge/Opera
             this.model.openStorageFile().then(success => {
                 if (success) {
                     this.model.isFileStorageEnabled = true;
@@ -1842,31 +2348,53 @@ class NavigationApp {
                     });
                 }
             }).catch(err => {
-                this.showToast('选择存储文件失败', 'error');
+                this.showToast('选择存储文件失败：' + err.message, 'error');
             });
         } else {
-            this.showToast('您的浏览器不支持文件系统访问API', 'error');
+            this.showToast('您的浏览器不支持文件系统访问API。目前仅Chrome、Edge和Opera浏览器支持此功能。', 'error');
         }
     }
-    
+
     performManualBackup() {
-        if (this.model.isFileStorageEnabled) {
-            this.model.backupFile().then(success => {
+        if (this.model.isFileStorageEnabled || this.model.isFirefox() || this.model.isTreaBrowser()) {
+            // 对于已启用文件存储或Firefox/trea浏览器，使用适配器备份
+            if (!this.model.storageAdapter) {
+                this.model.initFileStorage();
+            }
+            
+            this.model.storageAdapter.backupStorage().then(success => {
                 if (success) {
                     this.showToast('手动备份成功');
                 } else {
                     this.showToast('手动备份失败', 'error');
                 }
             }).catch(err => {
-                this.showToast('手动备份失败', 'error');
+                this.showToast('手动备份失败：' + err.message, 'error');
             });
         } else {
             this.showToast('请先启用文件存储', 'error');
         }
     }
-    
+
     restoreFromManualBackup() {
-        if (this.model.isFileSystemAPISupported()) {
+        if (this.model.isFileStorageEnabled || this.model.isFirefox() || this.model.isTreaBrowser()) {
+            // 对于已启用文件存储或Firefox/trea浏览器，使用适配器恢复
+            if (!this.model.storageAdapter) {
+                this.model.initFileStorage();
+            }
+            
+            this.model.storageAdapter.restoreStorage().then(success => {
+                if (success) {
+                    this.refreshAllData();
+                    this.showToast('从备份恢复成功');
+                } else {
+                    this.showToast('从备份恢复失败', 'error');
+                }
+            }).catch(err => {
+                this.showToast('从备份恢复失败：' + err.message, 'error');
+            });
+        } else if (this.model.isFileSystemAPISupported()) {
+            // 原有逻辑，适用于Chrome/Edge/Opera
             this.model.restoreFromBackup().then(success => {
                 if (success) {
                     this.refreshAllData();
@@ -1875,10 +2403,10 @@ class NavigationApp {
                     this.showToast('从备份恢复失败', 'error');
                 }
             }).catch(err => {
-                this.showToast('从备份恢复失败', 'error');
+                this.showToast('从备份恢复失败：' + err.message, 'error');
             });
         } else {
-            this.showToast('您的浏览器不支持文件系统访问API', 'error');
+            this.showToast('您的浏览器不支持文件系统访问API。目前仅Chrome、Edge和Opera浏览器支持此功能。', 'error');
         }
     }
 
@@ -1919,22 +2447,19 @@ class NavigationApp {
             return;
         }
 
-        // 使用grid布局展示工具组内的快捷方式
-        this.toolgroupItems.style.display = 'grid';
-        this.toolgroupItems.style.gridTemplateColumns = 'repeat(auto-fill, minmax(120px, 1fr))';
-        this.toolgroupItems.style.gap = `${layout.spacing}px`;
-        this.toolgroupItems.style.justifyItems = 'center';
-        this.toolgroupItems.style.alignItems = 'center';
+        // 限制最多显示15项（3行 × 5列）
+        const maxItems = 15;
+        const displayItems = group.items.slice(0, maxItems);
 
-        group.items.forEach(item => {
+        displayItems.forEach(item => {
             const navItem = document.createElement('a');
             navItem.href = item.url;
             navItem.target = '_blank';
             navItem.className = 'nav-item';
-            navItem.style.setProperty('--icon-size', `${layout.iconSize}px`);
+            navItem.style.setProperty('--icon-size', '48px');
 
             navItem.innerHTML = `
-                <div class="nav-item-icon" style="width: ${layout.iconSize}px; height: ${layout.iconSize}px; font-size: ${layout.iconSize * 0.6}px">
+                <div class="nav-item-icon" style="width: 48px; height: 48px; font-size: 28.8px">
                     ${item.icon || '🔗'}
                 </div>
                 <div class="nav-item-name">${item.name}</div>
@@ -2010,15 +2535,15 @@ class NavigationApp {
             });
 
             listItem.querySelector('.delete-toolgroup').addEventListener('click', () => {
-                // 先弹出确认提示框
-                if (confirm(`确定要删除工具组 "${group.name}" 吗？`)) {
+                // 打开自定义确认删除模态框
+                this.openConfirmDeleteModal(`确定要删除工具组 "${group.name}" 吗？`, () => {
                     // 仅在用户确认后执行删除操作
                     this.model.deleteToolGroup(group.id);
                     // 刷新相关列表
                     this.renderNavigationGrid();
                     this.renderToolgroupList();
                     this.showToast('已删除工具组');
-                }
+                });
             });
 
             this.toolgroupList.appendChild(listItem);
@@ -2075,6 +2600,22 @@ class NavigationApp {
         this.toolgroupEditModal.classList.remove('active');
         this.currentEditItemId = null;
         this.toolgroupEditForm.reset();
+    }
+    
+    // 打开确认删除模态框
+    openConfirmDeleteModal(message, callback) {
+        this.confirmDeleteMessage.textContent = message;
+        this.confirmDeleteCallback = callback;
+        this.confirmDeleteModal.classList.add('active');
+    }
+    
+    // 执行确认删除操作
+    confirmDeleteAction() {
+        if (typeof this.confirmDeleteCallback === 'function') {
+            this.confirmDeleteCallback();
+        }
+        this.confirmDeleteModal.classList.remove('active');
+        this.confirmDeleteCallback = null;
     }
 
     // 搜索相关方法

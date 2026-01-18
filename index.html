@@ -92,6 +92,23 @@
         </div>
     </div>
 
+    <!-- 确认删除模态框 -->
+    <div id="confirm-delete-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>确认删除</h3>
+                <button class="close-modal" type="button">×</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirm-delete-message">确定要执行此操作吗？</p>
+                <div class="form-buttons">
+                    <button type="button" id="confirm-delete-ok" class="btn primary">确定</button>
+                    <button type="button" id="confirm-delete-cancel" class="btn secondary close-modal">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 工具组编辑模态框 -->
     <div id="toolgroup-edit-modal" class="modal">
         <div class="modal-content">
@@ -187,6 +204,26 @@
                 </div>
             </section>
 
+            <!-- 外观设置 -->
+            <section class="settings-section">
+                <h3>外观设置</h3>
+                <div class="form-group">
+                    <label for="text-color">快捷方式文字颜色</label>
+                    <div class="form-row wallpaper-controls">
+                        <div class="color-picker-container">
+                            <input type="color" id="text-color" class="color-picker" value="#2d3748">
+                            <input type="text" id="text-color-hex" class="color-hex-input" placeholder="#2d3748">
+                        </div>
+                        <button id="reset-text-color" class="btn secondary" type="button">恢复默认颜色</button>
+                    </div>
+                    <div class="color-preview-container">
+                        <div class="color-preview" id="color-preview">
+                            <div class="preview-text">文字预览</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- 数据管理 -->
             <section class="settings-section">
                 <h3>数据管理</h3>
@@ -209,9 +246,15 @@
                         <button id="manual-backup" class="btn secondary" type="button">手动备份</button>
                         <button id="restore-backup" class="btn secondary" type="button">从备份恢复</button>
                     </div>
-                    <div class="form-note">
-                        <small>启用文件存储后，您的设置将自动保存到本地JSON文件中，提供额外的数据安全性和备份选项。</small>
+                    <div style="border: 3px solid green;border-radius: 8px;padding: 1rem 1.25rem;background-color: #f8fafc;color: #4a5568;font-size: 0.95rem;font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);transition: all 0.3s ease;line-height: 1.5;display: block;">
+                        <small>启用文件存储后,您的设置将自动保存到本地JSON文件中,提供额外的数据安全性和备份选项。</small>
+                        <small><strong>兼容性说明：</strong>文件存储功能目前仅支持Chrome 86+、Edge 86+和Opera浏览器。如果您的浏览器不支持此功能，系统将默认使用localStorage进行数据存储。</small>
                     </div>
+                    <style>
+                        div small {display: block;}
+                        div small + small {margin-top: 0.75rem;}
+                        div strong {font-weight: 600;}
+                    </style>
                 </div>
             </section>
         </div>
@@ -221,7 +264,7 @@
     <div id="edit-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>编辑导航项</h3>
+                <h3>添加导航项</h3>
                 <button class="close-modal" type="button">×</button>
             </div>
             <div class="modal-body">
@@ -242,6 +285,42 @@
                             <div id="icon-preview" class="icon-preview"></div>
                         </div>
                         <input type="file" id="edit-icon" accept="image/*">
+                    </div>
+                    <div class="form-buttons">
+                        <button type="button" id="save-and-continue" class="btn primary">保存并继续</button>
+                        <button type="submit" class="btn primary">保存</button>
+                        <button type="button" class="btn secondary close-modal">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑现有导航项模态框 -->
+    <div id="edit-existing-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>编辑导航项</h3>
+                <button class="close-modal" type="button">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-existing-form">
+                    <div class="form-group">
+                        <input type="text" id="edit-existing-name" required placeholder="名称">
+                        <label for="edit-existing-name">名称</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="url" id="edit-existing-url" required placeholder="网址">
+                        <label for="edit-existing-url">网址</label>
+                    </div>
+                    <div class="form-group">
+                        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                            <label class="custom-file-upload" for="edit-existing-icon">
+                                选择图标
+                            </label>
+                            <div id="icon-existing-preview" class="icon-preview"></div>
+                        </div>
+                        <input type="file" id="edit-existing-icon" accept="image/*">
                     </div>
                     <div class="form-buttons">
                         <button type="submit" class="btn primary">保存</button>
