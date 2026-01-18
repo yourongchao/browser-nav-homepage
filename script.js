@@ -81,61 +81,137 @@ class FirefoxStorageAdapter extends StorageAdapter {
         super(model);
         this.fileInput = null;
         this.downloadLink = null;
+        this.isInitialized = false;
     }
     
     // 初始化DOM元素
     initElements() {
-        if (!this.fileInput) {
-            this.fileInput = document.createElement('input');
-            this.fileInput.type = 'file';
-            this.fileInput.accept = '.json';
-            this.fileInput.style.display = 'none';
-            document.body.appendChild(this.fileInput);
+        if (this.isInitialized) {
+            return;
         }
         
-        if (!this.downloadLink) {
-            this.downloadLink = document.createElement('a');
-            this.downloadLink.style.display = 'none';
-            document.body.appendChild(this.downloadLink);
+        try {
+            // 创建文件输入元素
+            if (!this.fileInput) {
+                this.fileInput = document.createElement('input');
+                this.fileInput.type = 'file';
+                this.fileInput.accept = '.json';
+                this.fileInput.style.display = 'none';
+                // 添加唯一标识，便于调试
+                this.fileInput.id = 'firefox-storage-file-input';
+                document.body.appendChild(this.fileInput);
+            }
+            
+            // 创建下载链接元素
+            if (!this.downloadLink) {
+                this.downloadLink = document.createElement('a');
+                this.downloadLink.style.display = 'none';
+                // 添加唯一标识，便于调试
+                this.downloadLink.id = 'firefox-storage-download-link';
+                document.body.appendChild(this.downloadLink);
+            }
+            
+            this.isInitialized = true;
+        } catch (err) {
+            console.error('Firefox存储适配器初始化DOM元素失败:', err);
+            this.isInitialized = false;
+        }
+    }
+    
+    // 清理DOM元素
+    cleanupElements() {
+        try {
+            if (this.fileInput && document.body.contains(this.fileInput)) {
+                document.body.removeChild(this.fileInput);
+                this.fileInput = null;
+            }
+            
+            if (this.downloadLink && document.body.contains(this.downloadLink)) {
+                document.body.removeChild(this.downloadLink);
+                this.downloadLink = null;
+            }
+            
+            this.isInitialized = false;
+        } catch (err) {
+            console.error('清理DOM元素失败:', err);
         }
     }
     
     // 打开存储文件
     async openStorage() {
-        this.initElements();
-        
-        return new Promise((resolve) => {
-            this.fileInput.onchange = (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        try {
-                            const data = JSON.parse(event.target.result);
-                            this.model.currentSettings = data;
-                            this.model.ensureSettingsStructure();
-                            this.model.saveSettings(); // 同时保存到localStorage
-                            resolve(true);
-                        } catch (err) {
-                            console.error('读取文件失败:', err);
-                            resolve(false);
-                        }
-                    };
-                    reader.readAsText(file);
-                } else {
-                    resolve(false);
-                }
-            };
+        try {
+            this.initElements();
             
-            this.fileInput.click();
-        });
+            if (!this.isInitialized) {
+                console.error('Firefox存储适配器未正确初始化');
+                // 回退到localStorage
+                this.model.currentSettings = this.model.loadSettings();
+                return true;
+            }
+            
+            return new Promise((resolve) => {
+                // 确保之前的事件监听器已移除
+                this.fileInput.onchange = null;
+                
+                this.fileInput.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        
+                        reader.onload = (event) => {
+                            try {
+                                const data = JSON.parse(event.target.result);
+                                
+                                // 验证数据有效性
+                                if (this.model.validateSettings(data)) {
+                                    this.model.currentSettings = data;
+                                    this.model.ensureSettingsStructure();
+                                    this.model.saveSettings(); // 同时保存到localStorage作为备份
+                                    console.log('成功从文件加载设置');
+                                    resolve(true);
+                                } else {
+                                    console.error('文件中的数据无效');
+                                    resolve(false);
+                                }
+                            } catch (err) {
+                                console.error('读取文件失败:', err);
+                                resolve(false);
+                            }
+                        };
+                        
+                        reader.onerror = (event) => {
+                            console.error('文件读取错误:', event.target.error);
+                            resolve(false);
+                        };
+                        
+                        reader.readAsText(file);
+                    } else {
+                        // 用户取消了文件选择
+                        resolve(false);
+                    }
+                };
+                
+                this.fileInput.click();
+            });
+        } catch (err) {
+            console.error('打开存储文件失败:', err);
+            // 回退到localStorage
+            this.model.currentSettings = this.model.loadSettings();
+            return true;
+        }
     }
     
     // 保存存储文件
     async saveStorage() {
-        this.initElements();
-        
         try {
+            this.initElements();
+            
+            if (!this.isInitialized) {
+                console.error('Firefox存储适配器未正确初始化');
+                // 回退到localStorage
+                return this.model.saveSettings();
+            }
+            
             // 更新时间戳和校验和
             this.model.currentSettings.timestamp = Date.now();
             this.model.currentSettings.checksum = this.model.generateChecksum(this.model.currentSettings);
@@ -147,28 +223,45 @@ class FirefoxStorageAdapter extends StorageAdapter {
             const url = URL.createObjectURL(dataBlob);
             this.downloadLink.href = url;
             this.downloadLink.download = this.model.storageFileName;
+            
+            // 触发下载
             this.downloadLink.click();
             
             // 清理URL对象
             setTimeout(() => {
                 URL.revokeObjectURL(url);
+                console.log('成功保存设置文件');
             }, 100);
+            
+            // 同时保存到localStorage作为备份
+            this.model.saveSettings();
             
             return true;
         } catch (err) {
             console.error('保存文件失败:', err);
-            return false;
+            // 回退到localStorage
+            return this.model.saveSettings();
         }
     }
     
     // 备份存储文件
     async backupStorage() {
-        this.initElements();
-        
         try {
+            this.initElements();
+            
+            if (!this.isInitialized) {
+                console.error('Firefox存储适配器未正确初始化');
+                // 回退到localStorage备份
+                return this.model.saveSettings();
+            }
+            
             // 更新时间戳和校验和
             this.model.currentSettings.timestamp = Date.now();
             this.model.currentSettings.checksum = this.model.generateChecksum(this.model.currentSettings);
+            
+            // 生成带有时间戳的备份文件名
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const backupFileName = `${this.model.backupFileName.replace('.json', '')}-${timestamp}.json`;
             
             const dataStr = JSON.stringify(this.model.currentSettings, null, 2);
             const dataBlob = new Blob([dataStr], { type: 'application/json' });
@@ -176,28 +269,248 @@ class FirefoxStorageAdapter extends StorageAdapter {
             // 使用<a download>方式下载备份文件
             const url = URL.createObjectURL(dataBlob);
             this.downloadLink.href = url;
-            this.downloadLink.download = this.model.backupFileName;
+            this.downloadLink.download = backupFileName;
             this.downloadLink.click();
             
             // 清理URL对象
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                console.log('成功创建备份文件:', backupFileName);
+            }, 100);
+            
+            return true;
+        } catch (err) {
+            console.error('备份文件失败:', err);
+            // 回退到localStorage备份
+            return this.model.saveSettings();
+        }
+    }
+    
+    // 恢复存储文件
+    async restoreStorage() {
+        try {
+            return await this.openStorage();
+        } catch (err) {
+            console.error('恢复存储文件失败:', err);
+            // 回退到localStorage
+            this.model.currentSettings = this.model.loadSettings();
+            return true;
+        }
+    }
+    
+    // 销毁适配器
+    destroy() {
+        this.cleanupElements();
+    }
+}
+
+// IndexedDB适配器（跨浏览器兼容方案）
+class IndexedDBAdapter extends StorageAdapter {
+    constructor(model) {
+        super(model);
+        this.dbName = 'navigationSettingsDB';
+        this.storeName = 'settings';
+        this.dbVersion = 1;
+        this.db = null;
+    }
+    
+    // 初始化IndexedDB连接
+    async initDB() {
+        return new Promise((resolve, reject) => {
+            if (this.db) {
+                resolve(this.db);
+                return;
+            }
+            
+            const request = indexedDB.open(this.dbName, this.dbVersion);
+            
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                // 创建存储对象
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    db.createObjectStore(this.storeName, { keyPath: 'id' });
+                }
+            };
+            
+            request.onsuccess = (event) => {
+                this.db = event.target.result;
+                resolve(this.db);
+            };
+            
+            request.onerror = (event) => {
+                console.error('IndexedDB初始化失败:', event.target.error);
+                reject(event.target.error);
+            };
+        });
+    }
+    
+    // 执行IndexedDB事务
+    async executeTransaction(mode, callback) {
+        const db = await this.initDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([this.storeName], mode);
+            const store = transaction.objectStore(this.storeName);
+            
+            try {
+                const result = callback(store);
+                
+                transaction.oncomplete = () => {
+                    resolve(result);
+                };
+                
+                transaction.onerror = (event) => {
+                    console.error('IndexedDB事务失败:', event.target.error);
+                    reject(event.target.error);
+                };
+            } catch (err) {
+                console.error('IndexedDB操作失败:', err);
+                reject(err);
+            }
+        });
+    }
+    
+    async openStorage() {
+        try {
+            // 从IndexedDB读取设置
+            const settings = await this.executeTransaction('readonly', (store) => {
+                return store.get(1);
+            });
+            
+            if (settings) {
+                if (this.model.validateSettings(settings)) {
+                    this.model.currentSettings = settings;
+                    this.model.ensureSettingsStructure();
+                    // 同时保存到localStorage作为备份
+                    this.model.saveSettings();
+                    return true;
+                } else {
+                    console.error('IndexedDB中的数据无效，使用默认设置');
+                    this.model.currentSettings = this.model.defaultSettings;
+                    this.model.ensureSettingsStructure();
+                    return true;
+                }
+            } else {
+                // 如果IndexedDB中没有数据，从localStorage加载
+                this.model.currentSettings = this.model.loadSettings();
+                // 保存到IndexedDB
+                await this.saveStorage();
+                return true;
+            }
+        } catch (err) {
+            console.error('从IndexedDB打开存储失败:', err);
+            // 失败时回退到localStorage
+            this.model.currentSettings = this.model.loadSettings();
+            return true;
+        }
+    }
+    
+    async saveStorage() {
+        try {
+            // 更新时间戳和校验和
+            this.model.currentSettings.timestamp = Date.now();
+            this.model.currentSettings.checksum = this.model.generateChecksum(this.model.currentSettings);
+            
+            // 保存到IndexedDB
+            await this.executeTransaction('readwrite', (store) => {
+                return store.put({ id: 1, ...this.model.currentSettings });
+            });
+            
+            // 同时保存到localStorage作为备份
+            this.model.saveSettings();
+            return true;
+        } catch (err) {
+            console.error('保存到IndexedDB失败:', err);
+            // 失败时确保数据至少保存到localStorage
+            return this.model.saveSettings();
+        }
+    }
+    
+    async backupStorage() {
+        try {
+            // 从IndexedDB获取最新数据
+            const settings = await this.executeTransaction('readonly', (store) => {
+                return store.get(1);
+            });
+            
+            const dataStr = JSON.stringify(settings || this.model.currentSettings, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            
+            // 创建临时下载链接
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.download = this.model.backupFileName;
+            downloadLink.click();
+            
             setTimeout(() => {
                 URL.revokeObjectURL(url);
             }, 100);
             
             return true;
         } catch (err) {
-            console.error('备份文件失败:', err);
-            return false;
+            console.error('从IndexedDB备份失败:', err);
+            // 失败时回退到localStorage备份
+            return this.model.saveSettings();
         }
     }
     
-    // 恢复存储文件
     async restoreStorage() {
-        return this.openStorage();
+        return new Promise((resolve) => {
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = '.json';
+            fileInput.style.display = 'none';
+            document.body.appendChild(fileInput);
+            
+            fileInput.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = async (event) => {
+                        try {
+                            const data = JSON.parse(event.target.result);
+                            if (this.model.validateSettings(data)) {
+                                // 更新时间戳和校验和
+                                data.timestamp = Date.now();
+                                data.checksum = this.model.generateChecksum(data);
+                                
+                                // 保存到IndexedDB
+                                await this.executeTransaction('readwrite', (store) => {
+                                    return store.put({ id: 1, ...data });
+                                });
+                                
+                                // 更新内存中的设置
+                                this.model.currentSettings = data;
+                                this.model.ensureSettingsStructure();
+                                // 同时保存到localStorage
+                                this.model.saveSettings();
+                                
+                                resolve(true);
+                            } else {
+                                console.error('导入的数据无效');
+                                resolve(false);
+                            }
+                        } catch (err) {
+                            console.error('恢复存储失败:', err);
+                            resolve(false);
+                        } finally {
+                            // 清理DOM元素
+                            document.body.removeChild(fileInput);
+                        }
+                    };
+                    reader.readAsText(file);
+                } else {
+                    document.body.removeChild(fileInput);
+                    resolve(false);
+                }
+            };
+            
+            fileInput.click();
+        });
     }
 }
 
-// LocalStorage适配器（作为后备方案）
+// LocalStorage适配器（作为最终后备方案）
 class LocalStorageAdapter extends StorageAdapter {
     async openStorage() {
         // 对于LocalStorage，直接使用loadSettings
@@ -359,20 +672,38 @@ class NavigationModel {
             this.currentSettings.timestamp = Date.now();
             this.currentSettings.checksum = this.generateChecksum(this.currentSettings);
             
+            // 确保数据结构完整
+            this.ensureSettingsStructure();
+            
             // 先保存到localStorage（同步，确保数据安全）
             localStorage.setItem(this.storageKey, JSON.stringify(this.currentSettings));
+            console.log('设置已保存到localStorage');
             
-            // 再异步保存到文件（如果启用了文件存储且已初始化存储适配器）
+            // 再异步保存到其他存储方案（如果启用了文件存储且已初始化存储适配器）
             if (this.isFileStorageEnabled && this.storageAdapter) {
-                this.storageAdapter.saveStorage().catch(err => {
-                    console.error('保存到文件失败，但已保存到localStorage:', err);
+                this.storageAdapter.saveStorage().then(success => {
+                    if (success) {
+                        console.log('设置已保存到文件存储');
+                    } else {
+                        console.warn('文件存储保存失败，但已保存到localStorage');
+                    }
+                }).catch(err => {
+                    console.error('保存到文件存储失败，但已保存到localStorage:', err);
                 });
             }
             
             return true;
         } catch (err) {
             console.error('保存设置失败:', err);
-            return false;
+            // 尝试仅保存到localStorage作为最后的后备
+            try {
+                localStorage.setItem(this.storageKey, JSON.stringify(this.currentSettings));
+                console.log('已作为后备保存到localStorage');
+                return true;
+            } catch (localErr) {
+                console.error('后备保存到localStorage也失败:', localErr);
+                return false;
+            }
         }
     }
 
@@ -457,40 +788,90 @@ class NavigationModel {
 
     // 确保设置结构完整
     ensureSettingsStructure() {
-        // 确保基本属性存在
-        if (!this.currentSettings.version) {
+        let isModified = false;
+        
+        // 确保currentSettings是对象
+        if (!this.currentSettings || typeof this.currentSettings !== 'object') {
+            console.error('currentSettings不是对象，使用默认设置');
+            this.currentSettings = { ...this.defaultSettings };
+            isModified = true;
+        }
+        
+        // 确保基本属性存在且类型正确
+        if (!this.currentSettings.version || typeof this.currentSettings.version !== 'string') {
             this.currentSettings.version = this.defaultSettings.version;
+            isModified = true;
         }
         
-        if (!this.currentSettings.timestamp) {
+        if (!this.currentSettings.timestamp || typeof this.currentSettings.timestamp !== 'number') {
             this.currentSettings.timestamp = Date.now();
+            isModified = true;
         }
         
-        if (!this.currentSettings.checksum) {
+        if (!this.currentSettings.checksum || typeof this.currentSettings.checksum !== 'string') {
             this.currentSettings.checksum = this.generateChecksum(this.currentSettings);
+            isModified = true;
         }
         
-        if (!this.currentSettings.navigationItems) {
+        // 确保导航项数组存在且格式正确
+        if (!Array.isArray(this.currentSettings.navigationItems)) {
             this.currentSettings.navigationItems = [];
+            isModified = true;
         }
         
-        if (!this.currentSettings.toolGroups) {
+        // 确保工具组数组存在且格式正确
+        if (!Array.isArray(this.currentSettings.toolGroups)) {
             this.currentSettings.toolGroups = [];
+            isModified = true;
         }
         
-        if (!this.currentSettings.layout) {
-            this.currentSettings.layout = this.defaultSettings.layout;
+        // 确保布局设置存在且结构完整
+        if (!this.currentSettings.layout || typeof this.currentSettings.layout !== 'object') {
+            this.currentSettings.layout = { ...this.defaultSettings.layout };
+            isModified = true;
+        } else {
+            // 确保布局的每个属性存在且类型正确
+            if (typeof this.currentSettings.layout.columns !== 'number') {
+                this.currentSettings.layout.columns = this.defaultSettings.layout.columns;
+                isModified = true;
+            }
+            if (typeof this.currentSettings.layout.spacing !== 'number') {
+                this.currentSettings.layout.spacing = this.defaultSettings.layout.spacing;
+                isModified = true;
+            }
+            if (typeof this.currentSettings.layout.iconSize !== 'number') {
+                this.currentSettings.layout.iconSize = this.defaultSettings.layout.iconSize;
+                isModified = true;
+            }
         }
         
-        if (!this.currentSettings.search) {
-            this.currentSettings.search = this.defaultSettings.search;
+        // 确保搜索设置存在且结构完整
+        if (!this.currentSettings.search || typeof this.currentSettings.search !== 'object') {
+            this.currentSettings.search = { ...this.defaultSettings.search };
+            isModified = true;
+        } else {
+            // 确保搜索设置的每个属性存在且类型正确
+            if (typeof this.currentSettings.search.engine !== 'string') {
+                this.currentSettings.search.engine = this.defaultSettings.search.engine;
+                isModified = true;
+            }
+            if (typeof this.currentSettings.search.opacity !== 'number') {
+                this.currentSettings.search.opacity = this.defaultSettings.search.opacity;
+                isModified = true;
+            }
         }
         
-        if (!this.currentSettings.textColor) {
+        // 确保文字颜色设置存在且类型正确
+        if (!this.currentSettings.textColor || typeof this.currentSettings.textColor !== 'string') {
             this.currentSettings.textColor = this.defaultSettings.textColor;
+            isModified = true;
         }
         
-        this.saveSettings();
+        // 只有在实际修改了设置时才保存
+        if (isModified) {
+            console.log('设置结构已修复，保存更新后的设置');
+            this.saveSettings();
+        }
     }
     
     resetToDefault() {
@@ -520,46 +901,120 @@ class NavigationModel {
     
     // 检查浏览器是否支持文件系统访问API
     isFileSystemAPISupported() {
-        const hasSavePicker = 'showSaveFilePicker' in window;
-        const hasOpenPicker = 'showOpenFilePicker' in window;
-        
-        if (!hasSavePicker || !hasOpenPicker) {
-            console.log('浏览器不支持File System Access API:', {
-                hasSavePicker,
-                hasOpenPicker,
-                browser: navigator.userAgent
-            });
+        try {
+            // 检查核心API是否存在
+            const hasSavePicker = typeof window.showSaveFilePicker === 'function';
+            const hasOpenPicker = typeof window.showOpenFilePicker === 'function';
+            const hasFileSystemWritable = typeof window.FileSystemWritableFileStream === 'function';
+            
+            const isSupported = hasSavePicker && hasOpenPicker && hasFileSystemWritable;
+            
+            if (!isSupported) {
+                console.log('浏览器不支持File System Access API:', {
+                    hasSavePicker,
+                    hasOpenPicker,
+                    hasFileSystemWritable,
+                    browser: navigator.userAgent
+                });
+            }
+            
+            return isSupported;
+        } catch (err) {
+            console.error('检测File System Access API支持情况时出错:', err);
+            return false;
         }
-        
-        return hasSavePicker && hasOpenPicker;
     }
 
-    // 浏览器检测方法
+    // 浏览器检测方法 - 增强版
     isFirefox() {
-        return navigator.userAgent.toLowerCase().includes('firefox');
+        try {
+            // 多种检测方式结合，提高准确性
+            const userAgent = navigator.userAgent.toLowerCase();
+            const vendor = navigator.vendor || '';
+            
+            // 主要检测方式
+            const isFirefoxUA = userAgent.includes('firefox') || userAgent.includes('mozilla/');
+            const isNotChrome = !userAgent.includes('chrome') && !userAgent.includes('chromium');
+            const isNotEdge = !userAgent.includes('edg/');
+            const isNotSafari = !userAgent.includes('safari/') || vendor.toLowerCase().includes('mozilla');
+            
+            // Firefox特有属性检测
+            const hasFirefoxProps = typeof window.mozInnerScreenX !== 'undefined';
+            
+            return isFirefoxUA && isNotChrome && isNotEdge && isNotSafari || hasFirefoxProps;
+        } catch (err) {
+            console.error('检测Firefox浏览器时出错:', err);
+            // 出错时使用简单检测作为后备
+            return navigator.userAgent.toLowerCase().includes('firefox');
+        }
     }
 
     isTreaBrowser() {
-        return navigator.userAgent.toLowerCase().includes('trea');
+        try {
+            return navigator.userAgent.toLowerCase().includes('trea');
+        } catch (err) {
+            console.error('检测Trea浏览器时出错:', err);
+            return false;
+        }
+    }
+    
+    // 检查浏览器是否支持IndexedDB
+    isIndexedDBSupported() {
+        try {
+            return typeof window.indexedDB !== 'undefined';
+        } catch (err) {
+            console.error('检测IndexedDB支持情况时出错:', err);
+            return false;
+        }
     }
 
     // 存储适配器工厂方法
     createStorageAdapter() {
-        if (this.isFileSystemAPISupported()) {
-            return new FileSystemAccessAdapter(this);
-        } else if (this.isFirefox() || this.isTreaBrowser()) {
-            return new FirefoxStorageAdapter(this);
-        } else {
+        try {
+            // 优先选择File System Access API（提供最佳用户体验）
+            if (this.isFileSystemAPISupported()) {
+                console.log('使用File System Access API存储适配器');
+                return new FileSystemAccessAdapter(this);
+            }
+            
+            // 其次选择IndexedDB（跨浏览器兼容，提供持久化存储）
+            if (this.isIndexedDBSupported()) {
+                console.log('使用IndexedDB存储适配器');
+                return new IndexedDBAdapter(this);
+            }
+            
+            // 特殊处理Firefox浏览器，使用专用适配器
+            if (this.isFirefox() || this.isTreaBrowser()) {
+                console.log('使用Firefox存储适配器');
+                return new FirefoxStorageAdapter(this);
+            }
+            
+            // 最后选择LocalStorage作为后备方案
+            console.log('使用LocalStorage存储适配器');
+            return new LocalStorageAdapter(this);
+        } catch (err) {
+            console.error('创建存储适配器时出错:', err);
+            // 出错时回退到LocalStorage
             return new LocalStorageAdapter(this);
         }
     }
     
     // 初始化文件存储
     async initFileStorage() {
-        // 为所有浏览器创建存储适配器
-        this.storageAdapter = this.createStorageAdapter();
-        this.isFileStorageEnabled = true;
-        return true;
+        try {
+            // 为所有浏览器创建存储适配器
+            this.storageAdapter = this.createStorageAdapter();
+            this.isFileStorageEnabled = true;
+            
+            // 初始化存储，确保数据加载
+            await this.storageAdapter.openStorage();
+            
+            return true;
+        } catch (err) {
+            console.error('初始化文件存储失败:', err);
+            this.isFileStorageEnabled = false;
+            return false;
+        }
     }
     
     // 创建新的存储文件
@@ -1156,6 +1611,12 @@ class NavigationApp {
 
         // 消息提示
         this.toast = document.getElementById('toast');
+        
+        // 图标获取相关状态
+        this.manualIconSelected = {
+            new: false,
+            existing: false
+        };
     }
 
     bindEvents() {
@@ -1208,6 +1669,21 @@ class NavigationApp {
         // 编辑现有导航项模态框事件绑定
         this.editExistingForm.addEventListener('submit', (e) => this.handleEditExistingSubmit(e));
         this.editExistingIcon.addEventListener('change', (e) => this.previewExistingIcon(e));
+        
+        // 自动获取图标事件监听
+        this.editUrl.addEventListener('blur', () => this.autoGetFavicon(this.editUrl, this.iconPreview));
+        this.editUrl.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.autoGetFavicon(this.editUrl, this.iconPreview);
+            }
+        });
+        
+        this.editExistingUrl.addEventListener('blur', () => this.autoGetFavicon(this.editExistingUrl, this.iconExistingPreview));
+        this.editExistingUrl.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.autoGetFavicon(this.editExistingUrl, this.iconExistingPreview);
+            }
+        });
         
         this.closeModalBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1406,12 +1882,41 @@ class NavigationApp {
         navItem.style.color = this.model.getTextColor();
         navItem.draggable = true;
 
-        navItem.innerHTML = `
-            <div class="nav-item-icon" style="width: ${layout.iconSize}px; height: ${layout.iconSize}px; font-size: ${layout.iconSize * 0.6}px">
-                ${item.icon || '🔗'}
-            </div>
-            <div class="nav-item-name">${item.name}</div>
-        `;
+        // 创建导航项图标元素
+        const iconDiv = document.createElement('div');
+        iconDiv.className = 'nav-item-icon';
+        iconDiv.style.width = `${layout.iconSize}px`;
+        iconDiv.style.height = `${layout.iconSize}px`;
+        iconDiv.style.fontSize = `${layout.iconSize * 0.6}px`;
+        
+        // 根据图标类型设置显示方式
+        if (item.icon) {
+            if (item.icon.startsWith('http') || item.icon.startsWith('data:image')) {
+                // 如果是URL，设置为背景图片
+                iconDiv.style.backgroundImage = `url(${item.icon})`;
+                iconDiv.style.backgroundSize = 'cover';
+                iconDiv.style.backgroundRepeat = 'no-repeat';
+                iconDiv.style.backgroundPosition = 'center';
+                iconDiv.textContent = '';
+            } else {
+                // 否则作为文本显示
+                iconDiv.style.backgroundImage = '';
+                iconDiv.textContent = item.icon;
+            }
+        } else {
+            // 默认图标
+            iconDiv.style.backgroundImage = '';
+            iconDiv.textContent = '🔗';
+        }
+        
+        // 创建导航项名称元素
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'nav-item-name';
+        nameDiv.textContent = item.name;
+        
+        // 将元素添加到导航项中
+        navItem.appendChild(iconDiv);
+        navItem.appendChild(nameDiv);
 
         // 右键菜单
         navItem.addEventListener('contextmenu', (e) => {
@@ -2024,6 +2529,9 @@ class NavigationApp {
     openEditModal(itemId = null) {
         this.currentEditItemId = itemId;
         this.editModal.classList.add('active');
+        
+        // 重置手动选择图标状态
+        this.manualIconSelected.new = false;
 
         if (itemId) {
             const item = this.model.getNavigationItems().find(i => i.id === itemId);
@@ -2037,7 +2545,7 @@ class NavigationApp {
             this.editName.value = '';
             this.editUrl.value = '';
             this.iconPreview.style.backgroundImage = '';
-            this.iconPreview.textContent = '';
+            this.iconPreview.innerHTML = '<div class="icon-loading" style="display: none;">获取中...</div>';
         }
     }
 
@@ -2051,22 +2559,36 @@ class NavigationApp {
         event.preventDefault();
 
         const name = this.editName.value.trim();
-        const url = this.editUrl.value.trim();
+        let url = this.editUrl.value.trim();
 
         if (!name || !url) {
             this.showToast('请填写名称和网址', 'error');
             return;
         }
 
-        // 验证URL格式
-        try {
-            new URL(url);
-        } catch {
-            this.showToast('请输入有效的网址', 'error');
+        // 验证和规范化URL
+        const validationResult = this.validateAndNormalizeUrl(url);
+        if (!validationResult.valid) {
+            this.showToast(validationResult.message, 'error');
             return;
         }
-
-        const itemData = { name, url };
+        
+        const normalizedUrl = validationResult.url;
+        const itemData = { name, url: normalizedUrl };
+        
+        // 获取图标URL
+        const iconStyle = this.iconPreview.style.backgroundImage;
+        if (iconStyle) {
+            // 提取URL
+            const iconUrl = iconStyle.match(/url\(['"]?([^'"]+)['"]?\)/)[1];
+            itemData.icon = iconUrl;
+        } else {
+            // 如果没有背景图片，使用文本内容作为图标
+            const iconText = this.iconPreview.textContent.trim();
+            if (iconText) {
+                itemData.icon = iconText;
+            }
+        }
 
         if (this.currentEditItemId) {
             // 更新现有项
@@ -2085,22 +2607,36 @@ class NavigationApp {
 
     handleSaveAndContinue() {
         const name = this.editName.value.trim();
-        const url = this.editUrl.value.trim();
+        let url = this.editUrl.value.trim();
 
         if (!name || !url) {
             this.showToast('请填写名称和网址', 'error');
             return;
         }
 
-        // 验证URL格式
-        try {
-            new URL(url);
-        } catch {
-            this.showToast('请输入有效的网址', 'error');
+        // 验证和规范化URL
+        const validationResult = this.validateAndNormalizeUrl(url);
+        if (!validationResult.valid) {
+            this.showToast(validationResult.message, 'error');
             return;
         }
-
-        const itemData = { name, url };
+        
+        const normalizedUrl = validationResult.url;
+        const itemData = { name, url: normalizedUrl };
+        
+        // 获取图标URL
+        const iconStyle = this.iconPreview.style.backgroundImage;
+        if (iconStyle) {
+            // 提取URL
+            const iconUrl = iconStyle.match(/url\(['"]?([^'"]+)['"]?\)/)[1];
+            itemData.icon = iconUrl;
+        } else {
+            // 如果没有背景图片，使用文本内容作为图标
+            const iconText = this.iconPreview.textContent.trim();
+            if (iconText) {
+                itemData.icon = iconText;
+            }
+        }
 
         if (this.currentEditItemId) {
             this.model.updateNavigationItem(this.currentEditItemId, itemData);
@@ -2126,13 +2662,34 @@ class NavigationApp {
     openEditExistingModal(itemId) {
         this.currentEditItemId = itemId;
         this.editExistingModal.classList.add('active');
+        
+        // 重置手动选择图标状态
+        this.manualIconSelected.existing = false;
 
         const item = this.model.getNavigationItems().find(i => i.id === itemId);
         if (item) {
             this.editExistingName.value = item.name;
             this.editExistingUrl.value = item.url;
-            this.iconExistingPreview.style.backgroundImage = '';
-            this.iconExistingPreview.textContent = item.icon || '';
+            
+            // 根据图标类型设置预览
+            if (item.icon) {
+                if (item.icon.startsWith('http') || item.icon.startsWith('data:image')) {
+                    // 如果是URL，设置为背景图片
+                    this.iconExistingPreview.style.backgroundImage = `url(${item.icon})`;
+                    this.iconExistingPreview.style.backgroundSize = 'cover';
+                    this.iconExistingPreview.style.backgroundRepeat = 'no-repeat';
+                    this.iconExistingPreview.style.backgroundPosition = 'center';
+                    this.iconExistingPreview.textContent = '';
+                } else {
+                    // 否则作为文本显示
+                    this.iconExistingPreview.style.backgroundImage = '';
+                    this.iconExistingPreview.textContent = item.icon;
+                }
+            } else {
+                // 默认状态
+                this.iconExistingPreview.style.backgroundImage = '';
+                this.iconExistingPreview.innerHTML = '<div class="icon-loading" style="display: none;">获取中...</div>';
+            }
         }
     }
 
@@ -2146,22 +2703,36 @@ class NavigationApp {
         event.preventDefault();
 
         const name = this.editExistingName.value.trim();
-        const url = this.editExistingUrl.value.trim();
+        let url = this.editExistingUrl.value.trim();
 
         if (!name || !url) {
             this.showToast('请填写名称和网址', 'error');
             return;
         }
 
-        // 验证URL格式
-        try {
-            new URL(url);
-        } catch {
-            this.showToast('请输入有效的网址', 'error');
+        // 验证和规范化URL
+        const validationResult = this.validateAndNormalizeUrl(url);
+        if (!validationResult.valid) {
+            this.showToast(validationResult.message, 'error');
             return;
         }
-
-        const itemData = { name, url };
+        
+        const normalizedUrl = validationResult.url;
+        const itemData = { name, url: normalizedUrl };
+        
+        // 获取图标URL
+        const iconStyle = this.iconExistingPreview.style.backgroundImage;
+        if (iconStyle) {
+            // 提取URL
+            const iconUrl = iconStyle.match(/url\(['"]?([^'"]+)['"]?\)/)[1];
+            itemData.icon = iconUrl;
+        } else {
+            // 如果没有背景图片，使用文本内容作为图标
+            const iconText = this.iconExistingPreview.textContent.trim();
+            if (iconText) {
+                itemData.icon = iconText;
+            }
+        }
 
         if (this.currentEditItemId) {
             this.model.updateNavigationItem(this.currentEditItemId, itemData);
@@ -2199,12 +2770,343 @@ class NavigationApp {
             return;
         }
 
+        // 标记为手动选择图标
+        this.manualIconSelected.new = true;
+
         const reader = new FileReader();
         reader.onload = (e) => {
             this.iconPreview.style.backgroundImage = `url(${e.target.result})`;
             this.iconPreview.textContent = '';
         };
         reader.readAsDataURL(file);
+    }
+
+    // 预览现有导航项图标
+    previewExistingIcon(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            this.showToast('请选择图片文件', 'error');
+            return;
+        }
+
+        // 标记为手动选择图标
+        this.manualIconSelected.existing = true;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            this.iconExistingPreview.style.backgroundImage = `url(${e.target.result})`;
+            this.iconExistingPreview.textContent = '';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // 自动获取图标
+    async autoGetFavicon(urlInput, previewElement) {
+        let url = urlInput.value.trim();
+        if (!url) return;
+
+        // 验证和规范化URL
+        const validationResult = this.validateAndNormalizeUrl(url);
+        if (!validationResult.valid) {
+            return;
+        }
+
+        const normalizedUrl = validationResult.url;
+
+        // 检查是否已手动选择图标
+        const isNewItem = previewElement === this.iconPreview;
+        if (isNewItem ? this.manualIconSelected.new : this.manualIconSelected.existing) {
+            return;
+        }
+
+        // 显示加载状态
+        this.updateIconPreview(previewElement, null, true);
+
+        try {
+            const iconUrl = await this.getFavicon(normalizedUrl);
+            if (iconUrl) {
+                this.updateIconPreview(previewElement, iconUrl, false);
+            } else {
+                this.updateIconPreview(previewElement, null, false);
+                this.showToast('未找到可用图标，请手动选择', 'error');
+            }
+        } catch (error) {
+            this.updateIconPreview(previewElement, null, false);
+            this.showToast('获取图标失败，请手动选择', 'error');
+        }
+    }
+
+    // 获取图标
+    async getFavicon(url) {
+        try {
+            const urlObj = new URL(url);
+            const domain = urlObj.hostname;
+            const cacheKey = `favicon_${domain}`;
+
+            // 检查缓存
+            const cachedIcon = this.getCachedFavicon(cacheKey);
+            if (cachedIcon) {
+                return cachedIcon;
+            }
+
+            // 定义Favicon服务列表
+            const faviconServices = [
+                `https://icons.duckduckgo.com/ip3/${domain}.ico`,
+                `https://favicon.yandex.net/favicon/${domain}`,
+                `https://www.google.com/s2/favicons?domain=${domain}&sz=64`
+            ];
+
+            // 1. 尝试使用各个Favicon服务
+            for (const serviceUrl of faviconServices) {
+                try {
+                    const response = await this.fetchWithTimeout(serviceUrl, 3000);
+                    if (response.ok) {
+                        this.cacheFavicon(cacheKey, serviceUrl);
+                        return serviceUrl;
+                    }
+                } catch (error) {
+                    console.log(`Favicon服务 ${serviceUrl} 请求失败:`, error.message);
+                    // 继续尝试下一个服务
+                    continue;
+                }
+            }
+
+            // 2. 尝试直接获取favicon.ico
+            try {
+                const faviconUrl = `${urlObj.protocol}//${domain}/favicon.ico`;
+                const faviconResponse = await this.fetchWithTimeout(faviconUrl, 3000);
+                
+                if (faviconResponse.ok) {
+                    this.cacheFavicon(cacheKey, faviconUrl);
+                    return faviconUrl;
+                }
+            } catch (error) {
+                console.log(`直接获取favicon.ico失败:`, error.message);
+            }
+
+            // 3. 尝试从HTML页面提取图标
+            try {
+                const htmlIconUrl = await this.extractIconFromHtml(url);
+                if (htmlIconUrl) {
+                    this.cacheFavicon(cacheKey, htmlIconUrl);
+                    return htmlIconUrl;
+                }
+            } catch (error) {
+                console.log(`从HTML提取图标失败:`, error.message);
+            }
+
+            return null;
+        } catch (error) {
+            console.error('获取图标失败:', error);
+            return null;
+        }
+    }
+
+    // 带超时的fetch请求
+    fetchWithTimeout(url, timeout) {
+        return Promise.race([
+            fetch(url, {
+                mode: 'cors',
+                cache: 'force-cache',
+                headers: {
+                    'Accept': 'text/html, */*'
+                }
+            }),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('请求超时')), timeout)
+            )
+        ]);
+    }
+
+    // 从HTML页面提取图标
+    async extractIconFromHtml(url) {
+        try {
+            const response = await this.fetchWithTimeout(url, 5000);
+            if (!response.ok) {
+                return null;
+            }
+
+            const html = await response.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const urlObj = new URL(url);
+
+            // 查找所有图标标签
+            const iconTags = doc.querySelectorAll('link[rel*="icon"]');
+            if (iconTags.length === 0) {
+                return null;
+            }
+
+            // 优先选择带有sizes属性的较大图标
+            let bestIcon = null;
+            let maxSize = 0;
+
+            iconTags.forEach(tag => {
+                const href = tag.getAttribute('href');
+                if (!href) return;
+
+                // 解析图标URL
+                let iconUrl;
+                try {
+                    iconUrl = new URL(href, url).href;
+                } catch {
+                    return;
+                }
+
+                // 检查图标大小
+                const sizes = tag.getAttribute('sizes');
+                if (sizes) {
+                    const sizeMatch = sizes.match(/(\d+)x?(\d+)?/);
+                    if (sizeMatch) {
+                        const size = parseInt(sizeMatch[1]);
+                        if (size > maxSize) {
+                            maxSize = size;
+                            bestIcon = iconUrl;
+                        }
+                    }
+                } else if (!bestIcon) {
+                    // 如果没有sizes属性，使用第一个找到的图标
+                    bestIcon = iconUrl;
+                }
+            });
+
+            return bestIcon;
+        } catch (error) {
+            console.error('从HTML提取图标失败:', error);
+            return null;
+        }
+    }
+
+    // 更新图标预览
+    updateIconPreview(previewElement, iconUrl, isLoading) {
+        // 确保previewElement存在
+        if (!previewElement) {
+            return;
+        }
+        
+        let loadingElement = previewElement.querySelector('.icon-loading');
+        
+        // 如果没有loadingElement，创建一个
+        if (!loadingElement) {
+            loadingElement = document.createElement('div');
+            loadingElement.className = 'icon-loading';
+            loadingElement.style.display = 'none';
+            loadingElement.textContent = '获取中...';
+            previewElement.appendChild(loadingElement);
+        }
+        
+        if (isLoading) {
+            loadingElement.style.display = 'flex';
+            previewElement.style.backgroundImage = '';
+            previewElement.style.backgroundSize = '';
+            previewElement.style.backgroundRepeat = '';
+            previewElement.style.backgroundPosition = '';
+        } else {
+            loadingElement.style.display = 'none';
+            if (iconUrl) {
+                previewElement.style.backgroundImage = `url(${iconUrl})`;
+                previewElement.style.backgroundSize = 'cover';
+                previewElement.style.backgroundRepeat = 'no-repeat';
+                previewElement.style.backgroundPosition = 'center';
+                previewElement.textContent = '';
+            } else {
+                previewElement.style.backgroundImage = '';
+                previewElement.style.backgroundSize = '';
+                previewElement.style.backgroundRepeat = '';
+                previewElement.style.backgroundPosition = '';
+            }
+        }
+    }
+
+    // 缓存图标
+    cacheFavicon(key, iconUrl) {
+        const cacheData = {
+            iconUrl,
+            timestamp: Date.now(),
+            expire: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7天有效期
+        };
+        localStorage.setItem(key, JSON.stringify(cacheData));
+    }
+
+    // 获取缓存的图标
+    getCachedFavicon(key) {
+        const cachedData = localStorage.getItem(key);
+        if (!cachedData) return null;
+
+        try {
+            const { iconUrl, expire } = JSON.parse(cachedData);
+            if (Date.now() <= expire) {
+                return iconUrl;
+            }
+            // 缓存过期，删除
+            localStorage.removeItem(key);
+            return null;
+        } catch (error) {
+            console.error('解析缓存失败:', error);
+            localStorage.removeItem(key);
+            return null;
+        }
+    }
+
+    // URL验证和规范化工具函数
+    validateAndNormalizeUrl(url) {
+        // 去除首尾空格
+        url = url.trim();
+        if (!url) {
+            return { valid: false, message: '网址不能为空' };
+        }
+
+        // 检查是否包含无效协议
+        const protocolRegex = /^[a-zA-Z][a-zA-Z0-9+-.]*:\/\//;
+        const protocolMatch = url.match(protocolRegex);
+        if (protocolMatch) {
+            const protocol = protocolMatch[0].toLowerCase();
+            // 只允许http://和https://协议
+            if (protocol !== 'http://' && protocol !== 'https://') {
+                return { valid: false, message: '网址格式无效: 只支持http://和https://协议' };
+            }
+        }
+
+        // 规范化处理
+        // 1. 对于www.开头的网址，添加https://协议
+        if (url.startsWith('www.')) {
+            url = `https://${url}`;
+        }
+        // 2. 对于其他没有协议的网址，尝试添加https://
+        else if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            url = `https://${url}`;
+        }
+
+        // 验证URL格式
+        try {
+            const urlObj = new URL(url);
+            
+            // 验证主机名是否有效
+            if (!urlObj.hostname || urlObj.hostname === '') {
+                return { valid: false, message: '网址格式无效，请检查主机名' };
+            }
+            
+            // 验证主机名格式（至少包含一个点，且不以点开头或结尾）
+            const hostname = urlObj.hostname;
+            if (hostname.indexOf('.') === -1 && hostname !== 'localhost') {
+                return { valid: false, message: '网址格式无效，请检查主机名后缀' };
+            }
+            
+            if (hostname.startsWith('.') || hostname.endsWith('.')) {
+                return { valid: false, message: '网址格式无效，主机名不能以点开头或结尾' };
+            }
+            
+            // 检查是否包含连续的点
+            if (hostname.includes('..')) {
+                return { valid: false, message: '网址格式无效，主机名不能包含连续的点' };
+            }
+            
+            return { valid: true, url: urlObj.toString() };
+        } catch (error) {
+            return { valid: false, message: `网址格式无效: ${error.message}` };
+        }
     }
 
     // 数据管理

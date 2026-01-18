@@ -274,7 +274,7 @@
                         <label for="edit-name">名称</label>
                     </div>
                     <div class="form-group">
-                        <input type="url" id="edit-url" required placeholder="网址">
+                        <input type="text" id="edit-url" required placeholder="网址">
                         <label for="edit-url">网址</label>
                     </div>
                     <div class="form-group">
@@ -282,7 +282,9 @@
                             <label class="custom-file-upload" for="edit-icon">
                                 选择图标
                             </label>
-                            <div id="icon-preview" class="icon-preview"></div>
+                            <div id="icon-preview" class="icon-preview">
+                                <div class="icon-loading" style="display: none;">获取中...</div>
+                            </div>
                         </div>
                         <input type="file" id="edit-icon" accept="image/*">
                     </div>
@@ -310,7 +312,7 @@
                         <label for="edit-existing-name">名称</label>
                     </div>
                     <div class="form-group">
-                        <input type="url" id="edit-existing-url" required placeholder="网址">
+                        <input type="text" id="edit-existing-url" required placeholder="网址">
                         <label for="edit-existing-url">网址</label>
                     </div>
                     <div class="form-group">
@@ -318,7 +320,9 @@
                             <label class="custom-file-upload" for="edit-existing-icon">
                                 选择图标
                             </label>
-                            <div id="icon-existing-preview" class="icon-preview"></div>
+                            <div id="icon-existing-preview" class="icon-preview">
+                                <div class="icon-loading" style="display: none;">获取中...</div>
+                            </div>
                         </div>
                         <input type="file" id="edit-existing-icon" accept="image/*">
                     </div>

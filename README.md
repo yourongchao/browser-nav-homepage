@@ -18,8 +18,11 @@
 - **响应式设计**：适配不同屏幕尺寸
 
 ### 💾 数据存储
-- 默认使用`localStorage`进行数据存储，所有现代浏览器都支持
-- 可选启用**本地文件存储**，将设置保存到本地JSON文件（需浏览器支持）
+- **分层存储策略**：根据浏览器支持情况自动选择最佳存储方案
+  - **File System Access API**（优先，Chrome/Edge/Opera支持）
+  - **IndexedDB**（备选，所有现代浏览器支持）
+  - **localStorage**（后备，所有浏览器支持）
+- **本地文件存储**：支持将设置保存到本地JSON文件，提供额外的数据安全性和备份选项
 
 ## 浏览器兼容性
 
@@ -31,10 +34,21 @@
 - ✅ Opera 47+
 
 ### 本地文件存储功能
-本地文件存储功能依赖于现代浏览器的`File System Access API`，目前仅支持以下浏览器：
-- ✅ Chrome 86+
-- ✅ Edge 86+
-- ✅ Opera（基于Chrome内核的版本）
+本地文件存储功能采用分层支持策略：
+1. **File System Access API**（提供最佳体验）：
+   - ✅ Chrome 86+
+   - ✅ Edge 86+
+   - ✅ Opera（基于Chrome内核的版本）
+
+2. **IndexedDB**（跨浏览器兼容方案）：
+   - ✅ Firefox 55+
+   - ✅ Chrome 23+
+   - ✅ Edge 79+
+   - ✅ Safari 10+
+   - ✅ Opera 15+
+
+3. **localStorage**（后备方案）：
+   - ✅ 所有现代浏览器
 
 ## 快速开始
 
@@ -42,13 +56,13 @@
 
 ```bash
 # 使用Python 3
-python -m http.server 8099
+python -m http.server 8000
 
 # 或使用Python 2
-python -m SimpleHTTPServer 8099
+python -m SimpleHTTPServer 8000
 
 # 或使用Node.js
-npx http-server -p 8099
+npx http-server -p 8000
 ```
 
 ### 2. 访问应用
@@ -98,11 +112,11 @@ npx http-server -p 8099
 
 ### Q: 点击"启用本地文件存储"后提示"您的浏览器不支持文件系统访问API"？
 
-A: 这是由于浏览器兼容性问题导致的。本地文件存储功能依赖于现代浏览器的`File System Access API`，目前仅Chrome 86+、Edge 86+和Opera浏览器支持此功能。
+A: 这是由于浏览器兼容性问题导致的。系统检测到您的浏览器不支持`File System Access API`，但您仍然可以使用其他存储方案。
 
 **解决方案**：
-1. **继续使用当前浏览器**：系统会自动回退到`localStorage`存储，不影响核心功能
-2. **更换浏览器**：如果需要使用本地文件存储功能，建议更换为支持该API的浏览器
+1. **继续使用当前浏览器**：系统会自动选择最佳的替代存储方案（IndexedDB或localStorage），不影响核心功能
+2. **无需更换浏览器**：系统已优化为支持所有现代浏览器，包括Firefox最新版
 3. **使用导入/导出功能**：无论使用哪种浏览器，都可以通过"导出设置"和"导入设置"功能手动备份和恢复数据
 
 ### Q: 如何备份我的设置？
@@ -134,9 +148,71 @@ A: 有两种方法调整导航项顺序：
 ## 技术栈
 
 - **前端技术**：HTML5 + CSS3 + JavaScript (ES6+)
-- **数据存储**：localStorage + File System Access API（可选）
+- **数据存储**：
+  - File System Access API（可选，Chrome/Edge/Opera支持）
+  - IndexedDB（跨浏览器兼容方案）
+  - localStorage（后备方案）
 - **设计模式**：面向对象编程（OOP）
-- **架构风格**：模块化设计
+- **架构风格**：模块化设计，适配器模式实现存储方案的灵活切换
+
+## 网址验证与规范化
+
+### 实现原理
+
+网址验证与规范化功能通过以下步骤实现：
+1. **输入预处理**：去除网址首尾空格
+2. **协议自动补充**：对缺少协议的网址自动添加`https://`协议前缀
+3. **格式验证**：使用`URL`构造函数验证网址格式的有效性
+4. **主机名验证**：确保网址包含有效的主机名
+5. **规范化输出**：返回符合标准URL格式的规范化网址
+
+### 支持的网址格式
+
+| 网址格式 | 示例 | 处理结果 |
+|---------|------|---------|
+| http://开头 | http://www.example.com | http://www.example.com/ |
+| https://开头 | https://www.example.com | https://www.example.com/ |
+| www.开头 | www.example.com | https://www.example.com/ |
+| 无协议 | example.com | https://example.com/ |
+| 带路径 | example.com/path | https://example.com/path |
+| 带查询参数 | example.com?query=value | https://example.com/?query=value |
+| 带锚点 | example.com#anchor | https://example.com/#anchor |
+
+### 规范化规则
+
+1. **协议补充**：
+   - 对于以`www.`开头的网址，自动添加`https://`协议前缀
+   - 对于其他没有协议的网址，自动添加`https://`协议前缀
+   - 保留原始协议（http://或https://）
+
+2. **格式规范化**：
+   - 确保网址符合标准URL格式
+   - 自动补充缺失的斜杠
+   - 规范化查询参数和锚点
+
+3. **错误处理**：
+   - 空网址：提示"网址不能为空"
+   - 无效格式：提示具体错误信息
+   - 无效主机名：提示"网址格式无效，请检查主机名"
+
+### 常见无效网址案例及解决方案
+
+| 无效网址 | 错误原因 | 解决方案 |
+|---------|---------|---------|
+| `example` | 缺少主机名后缀 | 添加完整域名：example.com |
+| `http://` | 缺少主机名 | 添加完整主机名：http://example.com |
+| `http://.com` | 无效主机名 | 添加有效的主机名：http://example.com |
+| `example..com` | 无效域名格式 | 修正域名格式：example.com |
+| `http:// example.com` | 包含空格 | 移除空格：http://example.com |
+
+### 相关代码模块
+
+| 代码位置 | 功能说明 |
+|---------|---------|
+| `script.js:2861-2890` | `validateAndNormalizeUrl()` 方法：实现网址验证和规范化的核心逻辑 |
+| `script.js:2532-2548` | `handleEditSubmit()` 方法：使用新的URL验证逻辑处理表单提交 |
+| `script.js:2566-2582` | `handleSaveAndContinue()` 方法：使用新的URL验证逻辑处理保存并继续功能 |
+| `script.js:2716-2750` | `autoGetFavicon()` 方法：在自动获取图标前进行URL验证和规范化 |
 
 ## 开发说明
 
@@ -163,6 +239,13 @@ MIT License
 ## 更新日志
 
 ### 最新版本
+- **优化本地存储功能兼容性**：确保在Firefox最新版浏览器中正常使用
+- 实现了分层存储策略：File System Access API → IndexedDB → localStorage
+- 添加了IndexedDB存储适配器，提供跨浏览器兼容的本地存储解决方案
+- 增强了FirefoxStorageAdapter功能，优化文件选择流程和错误处理
+- 改进了适配器选择机制，实现基于浏览器支持情况的智能选择
+- 优化了数据同步机制，确保不同存储方案之间的数据一致性
+- 添加了更完善的错误处理和日志记录
 - 添加了快捷方式文字颜色设置功能
 - 改进了浏览器兼容性检测
 - 增强了错误提示信息
@@ -181,5 +264,3 @@ MIT License
 - 发送邮件：[2468068569@qq.com](mailto:2468068569@qq.com)
 
 ---
-
-**享受个性化的浏览体验！** 🚀
