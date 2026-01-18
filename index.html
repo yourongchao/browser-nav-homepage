@@ -16,11 +16,12 @@
             <div class="search-component">
                 <div class="search-left">
                     <select id="search-engine" class="search-engine-select">
-                        <option value="google">Google</option>
-                        <option value="baidu">百度</option>
-                        <option value="bing">Bing</option>
-                        <option value="yahoo">Yahoo</option>
-                    </select>
+                    <option value="google">Google</option>
+                    <option value="baidu">百度</option>
+                    <option value="bing">Bing</option>
+                    <option value="yahoo">Yahoo</option>
+                    <option value="local">本地</option>
+                </select>
                 </div>
                 <div class="search-center">
                     <div class="search-input-container">
@@ -33,13 +34,24 @@
             </div>
         </header>
 
-        <!-- 导航网格 -->
-        <div id="nav-grid" class="nav-grid">
-            <!-- 导航项通过JavaScript动态生成 -->
+        <!-- 标签筛选面板 -->
+    <div id="tag-filter-panel" class="tag-filter-panel">
+        <div class="tag-filter-header">
+            <h3>标签筛选</h3>
+            <button id="clear-tag-filter" class="btn-small btn-secondary">清除筛选</button>
         </div>
+        <div id="tag-filter-list" class="tag-filter-list">
+            <!-- 标签筛选选项通过JavaScript动态生成 -->
+        </div>
+    </div>
 
-        <!-- 添加导航项按钮（仅在设置模式下显示） -->
-        <button id="add-nav-btn" class="add-nav-btn" type="button">+ 添加快捷方式</button>
+    <!-- 导航网格 -->
+    <div id="nav-grid" class="nav-grid">
+        <!-- 导航项通过JavaScript动态生成 -->
+    </div>
+
+    <!-- 添加导航项按钮（仅在设置模式下显示） -->
+    <button id="add-nav-btn" class="add-nav-btn" type="button">+ 添加快捷方式</button>
     </main>
 
     <!-- 图标右键菜单 -->
@@ -231,7 +243,7 @@
                     <button id="export-data" class="btn secondary" type="button">导出设置</button>
                     <button id="import-data" class="btn secondary" type="button">导入设置</button>
                     <input type="file" id="import-file" accept=".json" style="display: none;">
-                    <button id="reset-data" class="btn danger" type="button">重置为默认设置</button>
+                    <button id="reset-data" class="btn danger" type="button">重置</button>
                 </div>
                 <div class="form-group">
                     <h4>文件存储设置</h4>
@@ -242,21 +254,29 @@
                         </label>
                     </div>
                     <div class="form-row">
-                        <button id="select-storage-file" class="btn secondary" type="button">选择存储文件</button>
-                        <button id="manual-backup" class="btn secondary" type="button">手动备份</button>
-                        <button id="restore-backup" class="btn secondary" type="button">从备份恢复</button>
+                        <button id="select-storage-file" class="btn secondary" type="button">选择文件</button>
+
+                        <button id="restore-backup" class="btn secondary" type="button">从文件恢复</button>
                     </div>
-                    <div style="border: 3px solid green;border-radius: 8px;padding: 1rem 1.25rem;background-color: #f8fafc;color: #4a5568;font-size: 0.95rem;font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);transition: all 0.3s ease;line-height: 1.5;display: block;">
-                        <small>启用文件存储后,您的设置将自动保存到本地JSON文件中,提供额外的数据安全性和备份选项。</small>
-                        <small><strong>兼容性说明：</strong>文件存储功能目前仅支持Chrome 86+、Edge 86+和Opera浏览器。如果您的浏览器不支持此功能，系统将默认使用localStorage进行数据存储。</small>
-                    </div>
-                    <style>
-                        div small {display: block;}
-                        div small + small {margin-top: 0.75rem;}
-                        div strong {font-weight: 600;}
-                    </style>
+                    <button id="storage-info-btn" class="btn secondary" type="button">ℹ️ 存储说明</button>
                 </div>
             </section>
+        </div>
+    </div>
+
+    <!-- 存储信息模态框 -->
+    <div id="storage-info-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>文件存储说明</h3>
+                <button class="close-modal" type="button">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="storage-info-content">
+                    <small>启用文件存储后,您的设置将自动保存到本地JSON文件中,提供额外的数据安全性和备份选项。</small>
+                    <small><strong>兼容性说明：</strong>文件存储功能支持Chrome 86+、Edge 86+、Opera浏览器以及Firefox浏览器。Firefox浏览器使用替代方案实现本地文件存储，提供相同的数据安全性和备份选项。如果您的浏览器不支持此功能，系统将默认使用localStorage进行数据存储。</small>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -278,6 +298,10 @@
                         <label for="edit-url">网址</label>
                     </div>
                     <div class="form-group">
+                        <input type="text" id="edit-icon-url" placeholder="图标在线网址（可选）">
+                        <label for="edit-icon-url">图标在线网址（可选）</label>
+                    </div>
+                    <div class="form-group">
                         <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
                             <label class="custom-file-upload" for="edit-icon">
                                 选择图标
@@ -287,6 +311,17 @@
                             </div>
                         </div>
                         <input type="file" id="edit-icon" accept="image/*">
+                    </div>
+                    <!-- 标签管理 -->
+                    <div class="form-group">
+                        <label for="edit-tags">标签</label>
+                        <div class="tags-container">
+                            <div id="edit-selected-tags" class="selected-tags"></div>
+                            <div class="tag-input-group">
+                                <input type="text" id="edit-tag-input" placeholder="输入标签名称" class="tag-input">
+                                <button type="button" id="add-edit-tag" class="btn btn-small primary">添加</button>
+                            </div>
+                        </div>
                     </div>
                     <div class="form-buttons">
                         <button type="button" id="save-and-continue" class="btn primary">保存并继续</button>
@@ -316,6 +351,10 @@
                         <label for="edit-existing-url">网址</label>
                     </div>
                     <div class="form-group">
+                        <input type="text" id="edit-existing-icon-url" placeholder="图标在线网址（可选）">
+                        <label for="edit-existing-icon-url">图标在线网址（可选）</label>
+                    </div>
+                    <div class="form-group">
                         <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
                             <label class="custom-file-upload" for="edit-existing-icon">
                                 选择图标
@@ -325,6 +364,17 @@
                             </div>
                         </div>
                         <input type="file" id="edit-existing-icon" accept="image/*">
+                    </div>
+                    <!-- 标签管理 -->
+                    <div class="form-group">
+                        <label for="edit-existing-tags">标签</label>
+                        <div class="tags-container">
+                            <div id="edit-existing-selected-tags" class="selected-tags"></div>
+                            <div class="tag-input-group">
+                                <input type="text" id="edit-existing-tag-input" placeholder="输入标签名称" class="tag-input">
+                                <button type="button" id="add-edit-existing-tag" class="btn btn-small primary">添加</button>
+                            </div>
+                        </div>
                     </div>
                     <div class="form-buttons">
                         <button type="submit" class="btn primary">保存</button>

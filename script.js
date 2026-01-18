@@ -606,16 +606,16 @@ class NavigationModel {
             checksum: '',
             wallpaper: '',
             navigationItems: [
-                { id: 1, name: 'Google', url: 'https://google.com', icon: '🔍' },
-                { id: 2, name: 'GitHub', url: 'https://github.com', icon: '💻' },
-                { id: 3, name: 'YouTube', url: 'https://youtube.com', icon: '▶️' },
-                { id: 4, name: 'Gmail', url: 'https://mail.google.com', icon: '📧' },
-                { id: 5, name: '百度', url: 'https://baidu.com', icon: '🌐' },
-                { id: 6, name: '知乎', url: 'https://zhihu.com', icon: '📚' },
-                { id: 7, name: 'CSDN', url: 'https://csdn.net', icon: '👨‍💻' },
-                { id: 8, name: 'B站', url: 'https://bilibili.com', icon: '🎬' },
-                { id: 9, name: '淘宝', url: 'https://taobao.com', icon: '🛒' },
-                { id: 10, name: '微信', url: 'https://wx.qq.com', icon: '💬' }
+                { id: 1, name: 'Google', url: 'https://google.com', icon: '🔍', tags: [] },
+                { id: 2, name: 'GitHub', url: 'https://github.com', icon: '💻', tags: [] },
+                { id: 3, name: 'YouTube', url: 'https://youtube.com', icon: '▶️', tags: [] },
+                { id: 4, name: 'Gmail', url: 'https://mail.google.com', icon: '📧', tags: [] },
+                { id: 5, name: '百度', url: 'https://baidu.com', icon: '🌐', tags: [] },
+                { id: 6, name: '知乎', url: 'https://zhihu.com', icon: '📚', tags: [] },
+                { id: 7, name: 'CSDN', url: 'https://csdn.net', icon: '👨‍💻', tags: [] },
+                { id: 8, name: 'B站', url: 'https://bilibili.com', icon: '🎬', tags: [] },
+                { id: 9, name: '淘宝', url: 'https://taobao.com', icon: '🛒', tags: [] },
+                { id: 10, name: '微信', url: 'https://wx.qq.com', icon: '💬', tags: [] }
             ],
             toolGroups: [],
             layout: {
@@ -625,9 +625,11 @@ class NavigationModel {
             },
             search: {
                 engine: 'google',
+                type: 'web', // 新增：web或local
                 opacity: 0.2 // 对应80%透明度，因为1 - 0.2 = 0.8
             },
-            textColor: '#2d3748' // 默认文字颜色
+            textColor: '#2d3748', // 默认文字颜色
+            tags: [] // 新增：所有可用标签
         };
         
         // 初始化数据
@@ -855,8 +857,14 @@ class NavigationModel {
                 this.currentSettings.search.engine = this.defaultSettings.search.engine;
                 isModified = true;
             }
+            
             if (typeof this.currentSettings.search.opacity !== 'number') {
                 this.currentSettings.search.opacity = this.defaultSettings.search.opacity;
+                isModified = true;
+            }
+            
+            if (typeof this.currentSettings.search.type !== 'string') {
+                this.currentSettings.search.type = this.defaultSettings.search.type;
                 isModified = true;
             }
         }
@@ -865,6 +873,20 @@ class NavigationModel {
         if (!this.currentSettings.textColor || typeof this.currentSettings.textColor !== 'string') {
             this.currentSettings.textColor = this.defaultSettings.textColor;
             isModified = true;
+        }
+        
+        // 确保tags数组存在
+        if (!Array.isArray(this.currentSettings.tags)) {
+            this.currentSettings.tags = [];
+            isModified = true;
+        }
+        
+        // 确保所有导航项都有tags字段
+        for (const item of this.currentSettings.navigationItems) {
+            if (!Array.isArray(item.tags)) {
+                item.tags = [];
+                isModified = true;
+            }
         }
         
         // 只有在实际修改了设置时才保存
@@ -977,16 +999,16 @@ class NavigationModel {
                 return new FileSystemAccessAdapter(this);
             }
             
-            // 其次选择IndexedDB（跨浏览器兼容，提供持久化存储）
-            if (this.isIndexedDBSupported()) {
-                console.log('使用IndexedDB存储适配器');
-                return new IndexedDBAdapter(this);
-            }
-            
             // 特殊处理Firefox浏览器，使用专用适配器
             if (this.isFirefox() || this.isTreaBrowser()) {
                 console.log('使用Firefox存储适配器');
                 return new FirefoxStorageAdapter(this);
+            }
+            
+            // 其次选择IndexedDB（跨浏览器兼容，提供持久化存储）
+            if (this.isIndexedDBSupported()) {
+                console.log('使用IndexedDB存储适配器');
+                return new IndexedDBAdapter(this);
             }
             
             // 最后选择LocalStorage作为后备方案
@@ -1205,6 +1227,11 @@ class NavigationModel {
         }
         
         if (item.toolGroupId !== undefined && typeof item.toolGroupId !== 'number' && item.toolGroupId !== null) {
+            return false;
+        }
+        
+        // 验证标签字段
+        if (item.tags !== undefined && !Array.isArray(item.tags)) {
             return false;
         }
         
@@ -1437,6 +1464,100 @@ class NavigationModel {
         this.currentSettings.search.engine = engine;
         this.saveSettings();
     }
+    
+    // 设置搜索类型
+    setSearchType(type) {
+        this.currentSettings.search.type = type;
+        this.saveSettings();
+    }
+    
+    // 获取搜索类型
+    getSearchType() {
+        return this.currentSettings.search.type;
+    }
+    
+    // 搜索导航项
+    searchNavigationItems(query) {
+        if (!query || query.trim() === '') {
+            return [];
+        }
+        
+        const searchTerm = query.toLowerCase().trim();
+        
+        return this.currentSettings.navigationItems.filter(item => {
+            // 按名称搜索
+            const nameMatch = item.name.toLowerCase().includes(searchTerm);
+            // 按URL搜索
+            const urlMatch = item.url.toLowerCase().includes(searchTerm);
+            // 按标签搜索
+            const tagsMatch = item.tags.some(tag => tag.toLowerCase().includes(searchTerm));
+            
+            return nameMatch || urlMatch || tagsMatch;
+        });
+    }
+    
+    // 标签相关方法
+    addTag(tagName) {
+        if (!tagName || tagName.trim() === '') {
+            return false;
+        }
+        
+        const trimmedTagName = tagName.trim();
+        if (!this.currentSettings.tags.includes(trimmedTagName)) {
+            this.currentSettings.tags.push(trimmedTagName);
+            this.saveSettings();
+            return true;
+        }
+        return false;
+    }
+    
+    removeTag(tagName) {
+        const index = this.currentSettings.tags.indexOf(tagName);
+        if (index !== -1) {
+            this.currentSettings.tags.splice(index, 1);
+            // 从所有导航项中移除该标签
+            this.currentSettings.navigationItems.forEach(item => {
+                const itemIndex = item.tags.indexOf(tagName);
+                if (itemIndex !== -1) {
+                    item.tags.splice(itemIndex, 1);
+                }
+            });
+            this.saveSettings();
+            return true;
+        }
+        return false;
+    }
+    
+    getAllTags() {
+        return this.currentSettings.tags;
+    }
+    
+    addTagToItem(itemId, tagName) {
+        const item = this.currentSettings.navigationItems.find(item => item.id === itemId);
+        if (item) {
+            // 确保标签存在
+            this.addTag(tagName);
+            if (!item.tags.includes(tagName)) {
+                item.tags.push(tagName);
+                this.saveSettings();
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    removeTagFromItem(itemId, tagName) {
+        const item = this.currentSettings.navigationItems.find(item => item.id === itemId);
+        if (item) {
+            const index = item.tags.indexOf(tagName);
+            if (index !== -1) {
+                item.tags.splice(index, 1);
+                this.saveSettings();
+                return true;
+            }
+        }
+        return false;
+    }
 
     getSearchOpacity() {
         return this.currentSettings.search.opacity;
@@ -1476,6 +1597,7 @@ class NavigationApp {
         this.renderToolgroupList();
         this.initSearchSettings();
         this.initTextColorSettings();
+        this.renderTagFilterOptions();
         this.hideAllMenus();
     }
 
@@ -1581,7 +1703,7 @@ class NavigationApp {
         // 文件存储控制
         this.enableFileStorageCheckbox = document.getElementById('enable-file-storage');
         this.selectStorageFileBtn = document.getElementById('select-storage-file');
-        this.manualBackupBtn = document.getElementById('manual-backup');
+
         this.restoreBackupBtn = document.getElementById('restore-backup');
 
         // 外观设置相关元素
@@ -1596,8 +1718,13 @@ class NavigationApp {
         this.editName = document.getElementById('edit-name');
         this.editUrl = document.getElementById('edit-url');
         this.editIcon = document.getElementById('edit-icon');
+        this.editIconUrl = document.getElementById('edit-icon-url');
         this.iconPreview = document.getElementById('icon-preview');
         this.saveAndContinueBtn = document.getElementById('save-and-continue');
+        // 标签相关元素
+        this.editTagInput = document.getElementById('edit-tag-input');
+        this.addEditTagBtn = document.getElementById('add-edit-tag');
+        this.editSelectedTags = document.getElementById('edit-selected-tags');
         
         // 编辑现有导航项模态框
         this.editExistingModal = document.getElementById('edit-existing-modal');
@@ -1605,9 +1732,21 @@ class NavigationApp {
         this.editExistingName = document.getElementById('edit-existing-name');
         this.editExistingUrl = document.getElementById('edit-existing-url');
         this.editExistingIcon = document.getElementById('edit-existing-icon');
+        this.editExistingIconUrl = document.getElementById('edit-existing-icon-url');
         this.iconExistingPreview = document.getElementById('icon-existing-preview');
+        // 标签相关元素
+        this.editExistingTagInput = document.getElementById('edit-existing-tag-input');
+        this.addEditExistingTagBtn = document.getElementById('add-edit-existing-tag');
+        this.editExistingSelectedTags = document.getElementById('edit-existing-selected-tags');
         
         this.closeModalBtns = document.querySelectorAll('.close-modal');
+        this.storageInfoBtn = document.getElementById('storage-info-btn');
+        this.storageInfoModal = document.getElementById('storage-info-modal');
+
+        // 标签筛选相关元素
+        this.tagFilterPanel = document.getElementById('tag-filter-panel');
+        this.tagFilterList = document.getElementById('tag-filter-list');
+        this.clearTagFilterBtn = document.getElementById('clear-tag-filter');
 
         // 消息提示
         this.toast = document.getElementById('toast');
@@ -1617,6 +1756,9 @@ class NavigationApp {
             new: false,
             existing: false
         };
+        
+        // 标签筛选相关状态
+        this.selectedTagsForFilter = [];
     }
 
     bindEvents() {
@@ -1649,7 +1791,7 @@ class NavigationApp {
         // 文件存储控制
         this.enableFileStorageCheckbox.addEventListener('change', (e) => this.toggleFileStorage(e.target.checked));
         this.selectStorageFileBtn.addEventListener('click', () => this.selectStorageFile());
-        this.manualBackupBtn.addEventListener('click', () => this.performManualBackup());
+
         this.restoreBackupBtn.addEventListener('click', () => this.restoreFromManualBackup());
 
         // 外观设置事件
@@ -1664,11 +1806,32 @@ class NavigationApp {
         // 编辑模态框
         this.editForm.addEventListener('submit', (e) => this.handleEditSubmit(e));
         this.editIcon.addEventListener('change', (e) => this.previewIcon(e));
+        this.editIconUrl.addEventListener('input', (e) => this.handleIconUrlInput(e, this.iconPreview));
         this.saveAndContinueBtn.addEventListener('click', () => this.handleSaveAndContinue());
+        
+        // 编辑模态框标签相关事件
+        this.addEditTagBtn.addEventListener('click', () => this.addTagToEdit());
+        this.editTagInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.addTagToEdit();
+            }
+        });
         
         // 编辑现有导航项模态框事件绑定
         this.editExistingForm.addEventListener('submit', (e) => this.handleEditExistingSubmit(e));
         this.editExistingIcon.addEventListener('change', (e) => this.previewExistingIcon(e));
+        this.editExistingIconUrl.addEventListener('input', (e) => this.handleIconUrlInput(e, this.iconExistingPreview));
+        
+        // 编辑现有导航项模态框标签相关事件
+        this.addEditExistingTagBtn.addEventListener('click', () => this.addTagToEditExisting());
+        this.editExistingTagInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.addTagToEditExisting();
+            }
+        });
+        
+        // 标签筛选相关事件
+        this.clearTagFilterBtn.addEventListener('click', () => this.clearTagFilter());
         
         // 自动获取图标事件监听
         this.editUrl.addEventListener('blur', () => this.autoGetFavicon(this.editUrl, this.iconPreview));
@@ -1685,6 +1848,11 @@ class NavigationApp {
             }
         });
         
+        // 存储信息模态框事件
+        this.storageInfoBtn.addEventListener('click', () => {
+            this.storageInfoModal.classList.add('active');
+        });
+        
         this.closeModalBtns.forEach(btn => {
             btn.addEventListener('click', () => {
                 this.closeEditModal();
@@ -1692,6 +1860,7 @@ class NavigationApp {
                 this.closeToolgroupEditModal();
                 this.toolgroupSelectModal.classList.remove('active');
                 this.confirmDeleteModal.classList.remove('active');
+                this.storageInfoModal.classList.remove('active');
                 this.confirmDeleteCallback = null;
             });
         });
@@ -1838,9 +2007,12 @@ class NavigationApp {
 
     // 导航网格渲染
     renderNavigationGrid() {
-        const items = this.model.getNavigationItems();
+        let items = this.model.getNavigationItems();
         const toolGroups = this.model.getToolGroups();
         const layout = this.model.getLayout();
+
+        // 应用标签筛选
+        items = this.filterNavigationItems(items);
 
         // 创建文档片段，减少DOM操作次数
         const fragment = document.createDocumentFragment();
@@ -1850,7 +2022,7 @@ class NavigationApp {
         const baseWidth = 200;
         const widthDecrement = 15;
         const minItemWidth = Math.max(80, baseWidth - (layout.columns - 6) * widthDecrement);
-        this.navGrid.style.gridTemplateColumns = `repeat(${layout.columns}, minmax(${minItemWidth}px, 1fr))`;
+        this.navGrid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${minItemWidth}px, 1fr))`;
         this.navGrid.style.gap = `${layout.spacing}px`;
 
         // 渲染普通导航项
@@ -2540,13 +2712,274 @@ class NavigationApp {
                 this.editUrl.value = item.url;
                 this.iconPreview.style.backgroundImage = '';
                 this.iconPreview.textContent = item.icon || '';
+                // 渲染标签
+                this.renderEditTags(item.tags || []);
             }
         } else {
             this.editName.value = '';
             this.editUrl.value = '';
             this.iconPreview.style.backgroundImage = '';
             this.iconPreview.innerHTML = '<div class="icon-loading" style="display: none;">获取中...</div>';
+            // 清除标签
+            this.clearEditTags();
         }
+    }
+    
+    // 打开编辑现有导航项模态框
+    openEditExistingModal(itemId) {
+        this.currentEditItemId = itemId;
+        const item = this.model.getNavigationItems().find(i => i.id === itemId);
+        if (!item) return;
+        
+        this.editExistingName.value = item.name;
+        this.editExistingUrl.value = item.url;
+        
+        // 设置图标
+        if (item.icon) {
+            if (item.icon.startsWith('http')) {
+                this.iconExistingPreview.style.backgroundImage = `url(${item.icon})`;
+                this.iconExistingPreview.textContent = '';
+            } else {
+                this.iconExistingPreview.style.backgroundImage = '';
+                this.iconExistingPreview.textContent = item.icon;
+            }
+        } else {
+            this.iconExistingPreview.style.backgroundImage = '';
+            this.iconExistingPreview.textContent = '';
+        }
+        
+        // 渲染标签
+        this.renderEditExistingTags(item.tags || []);
+        
+        this.editExistingModal.classList.add('active');
+    }
+    
+    // 渲染编辑模态框的标签
+    renderEditTags(tags) {
+        this.clearEditTags();
+        tags.forEach(tag => this.addTagToEditDisplay(tag));
+    }
+    
+    // 渲染编辑现有导航项模态框的标签
+    renderEditExistingTags(tags) {
+        this.clearEditExistingTags();
+        tags.forEach(tag => this.addTagToEditExistingDisplay(tag));
+    }
+    
+    // 清除编辑模态框的标签
+    clearEditTags() {
+        this.editSelectedTags.innerHTML = '';
+        this.editTagInput.value = '';
+    }
+    
+    // 清除编辑现有导航项模态框的标签
+    clearEditExistingTags() {
+        this.editExistingSelectedTags.innerHTML = '';
+        this.editExistingTagInput.value = '';
+    }
+    
+    // 向编辑模态框添加标签
+    addTagToEdit() {
+        const tagName = this.editTagInput.value.trim();
+        if (tagName) {
+            this.addTagToEditDisplay(tagName);
+            this.editTagInput.value = '';
+        }
+    }
+    
+    // 向编辑模态框显示添加标签
+    addTagToEditDisplay(tagName) {
+        // 检查标签是否已存在
+        const existingTags = Array.from(this.editSelectedTags.children).map(tagEl => 
+            tagEl.querySelector('.tag-name').textContent
+        );
+        if (existingTags.includes(tagName)) {
+            return;
+        }
+        
+        const tagElement = this.createTagElement(tagName, (tag) => this.removeTagFromEdit(tag));
+        this.editSelectedTags.appendChild(tagElement);
+    }
+    
+    // 从编辑模态框移除标签
+    removeTagFromEdit(tagName) {
+        const tagElements = this.editSelectedTags.children;
+        for (let i = 0; i < tagElements.length; i++) {
+            const tagEl = tagElements[i];
+            const name = tagEl.querySelector('.tag-name').textContent;
+            if (name === tagName) {
+                tagEl.remove();
+                break;
+            }
+        }
+    }
+    
+    // 向编辑现有导航项模态框添加标签
+    addTagToEditExisting() {
+        const tagName = this.editExistingTagInput.value.trim();
+        if (tagName) {
+            this.addTagToEditExistingDisplay(tagName);
+            this.editExistingTagInput.value = '';
+        }
+    }
+    
+    // 向编辑现有导航项模态框显示添加标签
+    addTagToEditExistingDisplay(tagName) {
+        // 检查标签是否已存在
+        const existingTags = Array.from(this.editExistingSelectedTags.children).map(tagEl => 
+            tagEl.querySelector('.tag-name').textContent
+        );
+        if (existingTags.includes(tagName)) {
+            return;
+        }
+        
+        const tagElement = this.createTagElement(tagName, (tag) => this.removeTagFromEditExisting(tag));
+        this.editExistingSelectedTags.appendChild(tagElement);
+    }
+    
+    // 从编辑现有导航项模态框移除标签
+    removeTagFromEditExisting(tagName) {
+        const tagElements = this.editExistingSelectedTags.children;
+        for (let i = 0; i < tagElements.length; i++) {
+            const tagEl = tagElements[i];
+            const name = tagEl.querySelector('.tag-name').textContent;
+            if (name === tagName) {
+                tagEl.remove();
+                break;
+            }
+        }
+    }
+    
+    // 创建标签元素
+    createTagElement(tagName, onRemove) {
+        const tagElement = document.createElement('div');
+        tagElement.className = 'selected-tag';
+        
+        const tagNameSpan = document.createElement('span');
+        tagNameSpan.className = 'tag-name';
+        tagNameSpan.textContent = tagName;
+        
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-tag';
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', () => onRemove(tagName));
+        
+        tagElement.appendChild(tagNameSpan);
+        tagElement.appendChild(removeBtn);
+        
+        return tagElement;
+    }
+    
+    // 获取编辑模态框中的标签
+    getEditTags() {
+        return Array.from(this.editSelectedTags.children).map(tagEl => 
+            tagEl.querySelector('.tag-name').textContent
+        );
+    }
+    
+    // 获取编辑现有导航项模态框中的标签
+    getEditExistingTags() {
+        return Array.from(this.editExistingSelectedTags.children).map(tagEl => 
+            tagEl.querySelector('.tag-name').textContent
+        );
+    }
+    
+    // 渲染标签筛选选项
+    renderTagFilterOptions() {
+        const allTags = this.model.getAllTags();
+        this.tagFilterList.innerHTML = '';
+        
+        if (allTags.length === 0) {
+            this.tagFilterPanel.style.display = 'none';
+            return;
+        }
+        
+        this.tagFilterPanel.style.display = 'block';
+        
+        allTags.forEach(tag => {
+            const filterItem = document.createElement('div');
+            filterItem.className = 'tag-filter-item';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `tag-filter-${tag}`;
+            checkbox.value = tag;
+            
+            const label = document.createElement('label');
+            label.htmlFor = `tag-filter-${tag}`;
+            label.textContent = tag;
+            
+            filterItem.appendChild(checkbox);
+            filterItem.appendChild(label);
+            
+            // 添加选择事件
+            checkbox.addEventListener('change', (e) => this.handleTagFilterChange(e));
+            
+            this.tagFilterList.appendChild(filterItem);
+        });
+    }
+    
+    // 处理标签筛选变化
+    handleTagFilterChange(event) {
+        const tag = event.target.value;
+        const isChecked = event.target.checked;
+        
+        if (isChecked) {
+            if (!this.selectedTagsForFilter.includes(tag)) {
+                this.selectedTagsForFilter.push(tag);
+            }
+        } else {
+            const index = this.selectedTagsForFilter.indexOf(tag);
+            if (index !== -1) {
+                this.selectedTagsForFilter.splice(index, 1);
+            }
+        }
+        
+        // 更新筛选结果
+        this.renderNavigationGrid();
+        
+        // 更新筛选项样式
+        this.updateTagFilterStyles();
+    }
+    
+    // 更新标签筛选项样式
+    updateTagFilterStyles() {
+        const filterItems = this.tagFilterList.querySelectorAll('.tag-filter-item');
+        filterItems.forEach(item => {
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            if (this.selectedTagsForFilter.includes(checkbox.value)) {
+                item.classList.add('selected');
+            } else {
+                item.classList.remove('selected');
+            }
+        });
+    }
+    
+    // 清除标签筛选
+    clearTagFilter() {
+        this.selectedTagsForFilter = [];
+        
+        // 清除所有复选框选中状态
+        const checkboxes = this.tagFilterList.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = false;
+        });
+        
+        // 更新样式和渲染
+        this.updateTagFilterStyles();
+        this.renderNavigationGrid();
+    }
+    
+    // 筛选导航项
+    filterNavigationItems(items) {
+        if (this.selectedTagsForFilter.length === 0) {
+            return items;
+        }
+        
+        return items.filter(item => {
+            // 检查项目的标签是否与选中的标签有交集
+            return this.selectedTagsForFilter.some(tag => item.tags?.includes(tag));
+        });
     }
 
     closeEditModal() {
@@ -2574,7 +3007,9 @@ class NavigationApp {
         }
         
         const normalizedUrl = validationResult.url;
-        const itemData = { name, url: normalizedUrl };
+        // 获取标签
+        const tags = this.getEditTags();
+        const itemData = { name, url: normalizedUrl, tags };
         
         // 获取图标URL
         const iconStyle = this.iconPreview.style.backgroundImage;
@@ -2602,6 +3037,7 @@ class NavigationApp {
 
         this.renderNavigationGrid();
         this.renderNavList();
+        this.renderTagFilterOptions();
         this.closeEditModal();
     }
 
@@ -2622,7 +3058,9 @@ class NavigationApp {
         }
         
         const normalizedUrl = validationResult.url;
-        const itemData = { name, url: normalizedUrl };
+        // 获取标签
+        const tags = this.getEditTags();
+        const itemData = { name, url: normalizedUrl, tags };
         
         // 获取图标URL
         const iconStyle = this.iconPreview.style.backgroundImage;
@@ -2648,6 +3086,7 @@ class NavigationApp {
 
         this.renderNavigationGrid();
         this.renderNavList();
+        this.renderTagFilterOptions();
 
         this.editName.value = '';
         this.editUrl.value = '';
@@ -2670,6 +3109,13 @@ class NavigationApp {
         if (item) {
             this.editExistingName.value = item.name;
             this.editExistingUrl.value = item.url;
+            
+            // 设置图标在线网址输入框的值
+            if (item.icon && (item.icon.startsWith('http') || item.icon.startsWith('data:image'))) {
+                this.editExistingIconUrl.value = item.icon;
+            } else {
+                this.editExistingIconUrl.value = '';
+            }
             
             // 根据图标类型设置预览
             if (item.icon) {
@@ -2718,7 +3164,9 @@ class NavigationApp {
         }
         
         const normalizedUrl = validationResult.url;
-        const itemData = { name, url: normalizedUrl };
+        // 获取标签
+        const tags = this.getEditExistingTags();
+        const itemData = { name, url: normalizedUrl, tags };
         
         // 获取图标URL
         const iconStyle = this.iconExistingPreview.style.backgroundImage;
@@ -2741,6 +3189,7 @@ class NavigationApp {
 
         this.renderNavigationGrid();
         this.renderNavList();
+        this.renderTagFilterOptions();
         this.closeEditExistingModal();
     }
 
@@ -2800,6 +3249,71 @@ class NavigationApp {
             this.iconExistingPreview.textContent = '';
         };
         reader.readAsDataURL(file);
+    }
+
+    // 处理图标URL输入
+    async handleIconUrlInput(event, previewElement) {
+        let iconUrl = event.target.value.trim();
+        if (!iconUrl) {
+            // 清空预览
+            this.updateIconPreview(previewElement, null, false);
+            return;
+        }
+
+        // 验证URL格式
+        let validationResult = { valid: false };
+        try {
+            // 对于图标URL，我们需要稍微宽松的验证，允许data URI和其他图片格式
+            if (iconUrl.startsWith('data:')) {
+                // 简单验证data URI格式
+                if (/^data:image\/[a-zA-Z+-.]+;base64,/.test(iconUrl)) {
+                    validationResult = { valid: true, url: iconUrl };
+                }
+            } else {
+                // 使用现有方法验证HTTP/HTTPS URL
+                validationResult = this.validateAndNormalizeUrl(iconUrl);
+            }
+        } catch (error) {
+            validationResult = { valid: false, message: '无效的URL格式' };
+        }
+
+        if (!validationResult.valid) {
+            this.showToast(`图标URL格式无效: ${validationResult.message || '请检查输入'}`);
+            return;
+        }
+
+        const normalizedIconUrl = validationResult.url;
+
+        // 显示加载状态
+        this.updateIconPreview(previewElement, null, true);
+
+        try {
+            // 尝试加载图标
+            await this.loadIconFromUrl(normalizedIconUrl, previewElement);
+        } catch (error) {
+            this.updateIconPreview(previewElement, null, false);
+            this.showToast('获取图标失败，请检查URL是否正确', 'error');
+        }
+    }
+
+    // 从URL加载图标
+    async loadIconFromUrl(iconUrl, previewElement) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            
+            img.onload = () => {
+                // 图标加载成功
+                this.updateIconPreview(previewElement, iconUrl, false);
+                resolve(iconUrl);
+            };
+            
+            img.onerror = () => {
+                reject(new Error('Failed to load icon'));
+            };
+            
+            img.src = iconUrl;
+        });
     }
 
     // 自动获取图标
@@ -3257,27 +3771,6 @@ class NavigationApp {
         }
     }
 
-    performManualBackup() {
-        if (this.model.isFileStorageEnabled || this.model.isFirefox() || this.model.isTreaBrowser()) {
-            // 对于已启用文件存储或Firefox/trea浏览器，使用适配器备份
-            if (!this.model.storageAdapter) {
-                this.model.initFileStorage();
-            }
-            
-            this.model.storageAdapter.backupStorage().then(success => {
-                if (success) {
-                    this.showToast('手动备份成功');
-                } else {
-                    this.showToast('手动备份失败', 'error');
-                }
-            }).catch(err => {
-                this.showToast('手动备份失败：' + err.message, 'error');
-            });
-        } else {
-            this.showToast('请先启用文件存储', 'error');
-        }
-    }
-
     restoreFromManualBackup() {
         if (this.model.isFileStorageEnabled || this.model.isFirefox() || this.model.isTreaBrowser()) {
             // 对于已启用文件存储或Firefox/trea浏览器，使用适配器恢复
@@ -3530,22 +4023,146 @@ class NavigationApp {
     }
 
     handleSearchEngineChange(engine) {
-        this.model.setSearchEngine(engine);
+        if (engine === 'local') {
+            this.model.setSearchType('local');
+            // 当选择本地搜索时，保持当前搜索引擎不变
+        } else {
+            this.model.setSearchEngine(engine);
+            this.model.setSearchType('web');
+        }
     }
 
     handleSearch() {
         const query = this.searchInput.value.trim();
         if (!query) return;
 
-        const engine = this.model.getSearchEngine();
-        const searchUrls = {
-            google: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
-            baidu: `https://www.baidu.com/s?wd=${encodeURIComponent(query)}`,
-            bing: `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
-            yahoo: `https://search.yahoo.com/search?p=${encodeURIComponent(query)}`
-        };
+        const searchType = this.model.getSearchType();
+        
+        if (searchType === 'local') {
+            // 执行本地搜索
+            this.performLocalSearch(query);
+        } else {
+            // 执行网络搜索
+            const engine = this.model.getSearchEngine();
+            const searchUrls = {
+                google: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+                baidu: `https://www.baidu.com/s?wd=${encodeURIComponent(query)}`,
+                bing: `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
+                yahoo: `https://search.yahoo.com/search?p=${encodeURIComponent(query)}`
+            };
 
-        window.open(searchUrls[engine], '_blank');
+            window.open(searchUrls[engine], '_blank');
+        }
+    }
+    
+    // 执行本地搜索
+    performLocalSearch(query) {
+        // 搜索导航项
+        const results = this.model.searchNavigationItems(query);
+        // 显示搜索结果
+        this.showSearchResults(results, query);
+    }
+    
+    // 显示搜索结果
+    showSearchResults(results, query) {
+        // 清除之前的搜索结果
+        this.clearSearchResults();
+        
+        // 创建搜索结果容器
+        const resultsContainer = this.createSearchResultsContainer();
+        
+        // 添加搜索结果标题
+        const title = document.createElement('div');
+        title.className = 'search-results-title';
+        title.textContent = `搜索结果: "${query}" (${results.length} 项)`;
+        resultsContainer.appendChild(title);
+        
+        // 添加搜索结果列表
+        const resultsList = document.createElement('div');
+        resultsList.className = 'search-results-list';
+        
+        if (results.length > 0) {
+            results.forEach(item => {
+                const resultItem = this.createSearchResultItem(item);
+                resultsList.appendChild(resultItem);
+            });
+        } else {
+            const noResults = document.createElement('div');
+            noResults.className = 'search-no-results';
+            noResults.textContent = '未找到匹配的快捷方式';
+            resultsList.appendChild(noResults);
+        }
+        
+        resultsContainer.appendChild(resultsList);
+        
+        // 添加清除按钮
+        const clearBtn = document.createElement('button');
+        clearBtn.className = 'search-clear-btn';
+        clearBtn.textContent = '清除搜索';
+        clearBtn.addEventListener('click', () => this.clearSearchResults());
+        resultsContainer.appendChild(clearBtn);
+        
+        // 将结果容器添加到页面
+        document.body.appendChild(resultsContainer);
+    }
+    
+    // 创建搜索结果容器
+    createSearchResultsContainer() {
+        const container = document.createElement('div');
+        container.id = 'search-results-container';
+        container.className = 'search-results-container';
+        return container;
+    }
+    
+    // 创建单个搜索结果项
+    createSearchResultItem(item) {
+        const resultItem = document.createElement('div');
+        resultItem.className = 'search-result-item';
+        
+        // 添加图标
+        const icon = document.createElement('div');
+        icon.className = 'search-result-icon';
+        
+        // 确保图标正确显示为图像
+        if (item.icon && (item.icon.startsWith('http') || item.icon.startsWith('data:image'))) {
+            // 如果是URL，设置为背景图片
+            icon.style.backgroundImage = `url(${item.icon})`;
+            icon.style.backgroundSize = 'cover';
+            icon.style.backgroundPosition = 'center';
+        } else {
+            // 否则作为文本显示（如emoji或其他字符）
+            icon.textContent = item.icon || '🔗';
+        }
+        
+        resultItem.appendChild(icon);
+        
+        // 添加信息
+        const info = document.createElement('div');
+        info.className = 'search-result-info';
+        
+        // 只添加名称，不添加URL和标签
+        const name = document.createElement('div');
+        name.className = 'search-result-name';
+        name.textContent = item.name;
+        info.appendChild(name);
+        
+        resultItem.appendChild(info);
+        
+        // 添加点击事件
+        resultItem.addEventListener('click', () => {
+            window.open(item.url, '_blank');
+            this.clearSearchResults();
+        });
+        
+        return resultItem;
+    }
+    
+    // 清除搜索结果
+    clearSearchResults() {
+        const existingContainer = document.getElementById('search-results-container');
+        if (existingContainer) {
+            existingContainer.remove();
+        }
     }
 
     updateSearchOpacity(opacity) {
